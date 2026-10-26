@@ -65,13 +65,21 @@ def main():
     vfx = VFXOverlay(minimalist_mode=True)
     invoker = InvokerController(direct_input_enabled=True)
 
-    # Status Kontrol
+    # Status Kontrol & Preset Hand Zone (Mengabaikan Wajah 100%)
     show_mask_pip = True
     calibration_mode = False
     use_hand_zone = True
-    hand_zone = (260, 60, 1020, 640)  # Area interaksi tangan (eliminasi gorden & rambut)
-    toast_msg = "HAND ZONE AKTIF [Z: Toggle]"
-    toast_timer = 3.0
+
+    zone_presets = [
+        ("TANGAN KANAN (WAJAH DIKECUALIKAN)", (480, 50, 1240, 670)),
+        ("TANGAN KIRI (WAJAH DIKECUALIKAN)", (40, 50, 800, 670)),
+        ("TENGAH / BEBAS", (260, 50, 1020, 670))
+    ]
+    zone_idx = 0  # Default Tangan Kanan: Sisi kiri frame (tempat kepala/badan) diabaikan 100%
+    hand_zone = zone_presets[zone_idx][1]
+
+    toast_msg = "HAND ZONE: TANGAN KANAN AKTIF [H: Ganti Sisi]"
+    toast_timer = 3.5
     fps_time = time.time()
     fps = 0.0
     consecutive_drop_count = 0
@@ -86,7 +94,7 @@ def main():
     print(" - 5 JARI         -> QUICK CAST D [Mantra Slot 1]")
     print(" - KEPAL (FIST)   -> QUICK CAST F [Mantra Slot 2]")
     print("-------------------------------------------------------------------")
-    print(" Shortcut: [C] Kalibrasi | [Z] Hand Zone | [I] DirectInput | [ESC] Keluar")
+    print(" Shortcut: [C] Kalibrasi | [H] Ganti Sisi | [Z] Hand Zone | [ESC] Keluar")
     print("===================================================================\n")
 
     while True:
@@ -194,9 +202,22 @@ def main():
         # Gambar Area Interaksi Tangan (Hand Zone) jika aktif
         if use_hand_zone:
             zx1, zy1, zx2, zy2 = hand_zone
-            cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (0, 200, 255), 1)
-            cv2.putText(frame, "HAND ZONE (AKTIF - GORDEN/RAMBUT TERBLOKIR) [Z: Toggle]",
-                        (zx1 + 10, zy1 + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1, cv2.LINE_AA)
+            mode_name, _ = zone_presets[zone_idx]
+
+            # Redupkan area luar (tempat kepala/badan berada) agar terlihat aman dan terabaikan
+            if zone_idx == 0:  # Tangan Kanan -> Redupkan area kiri layar tempat wajah berada
+                frame[:, :zx1] = (frame[:, :zx1] * 0.40).astype(np.uint8)
+                cv2.putText(frame, "[SAFE] WAJAH & TUBUH DIABAIKAN", (25, 80),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 150, 170), 1, cv2.LINE_AA)
+            elif zone_idx == 1:  # Tangan Kiri -> Redupkan area kanan layar
+                frame[:, zx2:] = (frame[:, zx2:] * 0.40).astype(np.uint8)
+                cv2.putText(frame, "[SAFE] WAJAH & TUBUH DIABAIKAN", (zx2 + 15, 80),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 150, 170), 1, cv2.LINE_AA)
+
+            # Gambar border Hand Zone
+            cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (0, 230, 255), 2)
+            cv2.putText(frame, f"HAND ZONE [{mode_name}] [H: Ganti Sisi | Z: Toggle]",
+                        (zx1 + 10, zy1 + 25), cv2.FONT_HERSHEY_DUPLEX, 0.48, (0, 230, 255), 1, cv2.LINE_AA)
 
         # Proses Deteksi Tangan (Isolasi Hand Zone aktif)
         active_roi = hand_zone if use_hand_zone else None
@@ -268,8 +289,8 @@ def main():
 
         cv2.putText(frame, f"PCV INVOKER | FPS: {fps:.1f}", (15, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.52, (230, 230, 240), 1, cv2.LINE_AA)
-        cv2.putText(frame, "[C] Kalibrasi  [Z] Hand Zone  [I] DirectInput  [M] Mask  [O] Reset Orbs  [K] Default  [ESC] Keluar", (200, 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 190, 210), 1, cv2.LINE_AA)
+        cv2.putText(frame, "[C] Kalibrasi  [H] Ganti Sisi Tangan  [Z] Hand Zone  [I] DirectInput  [M] Mask  [O] Orbs  [ESC] Keluar", (185, 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 190, 210), 1, cv2.LINE_AA)
         cv2.putText(frame, f"INPUT: {input_status} [I]", (w - 225, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.50, status_color, 1, cv2.LINE_AA)
 
@@ -307,6 +328,13 @@ def main():
             break
         elif key in [ord('c'), ord('C')]:
             calibration_mode = True
+        elif key in [ord('h'), ord('H')]:  # H untuk Ganti Sisi Tangan (Kanan / Kiri / Bebas)
+            zone_idx = (zone_idx + 1) % len(zone_presets)
+            hand_zone = zone_presets[zone_idx][1]
+            mode_name = zone_presets[zone_idx][0]
+            toast_msg = f"ZONA: {mode_name}"
+            toast_timer = 2.5
+            logger.info(f"Hand zone diganti ke: {mode_name}")
         elif key in [ord('z'), ord('Z')]:
             use_hand_zone = not use_hand_zone
             status_str = "AKTIF (Gorden & Rambut Terblokir)" if use_hand_zone else "NONAKTIF (Full Frame)"

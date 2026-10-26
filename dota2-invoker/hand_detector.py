@@ -220,20 +220,30 @@ class HandSealDetector:
             "centroid": palm_center  # Gunakan palm center sebagai titik pusat stabil
         }
 
-        # --- Klasifikasi Presisi Tinggi Berdasarkan Tip Count ---
+        # --- Klasifikasi Presisi Tinggi (Dual-Check: Tip Count + Defect Validation Anti-Wajah) ---
+        # Filter Anti-Wajah: Wajah/rambut yang bergelombang bisa memiliki 2-5 titik hull jauh,
+        # tetapi TIDAK memiliki celah lembah dalam (defect_count == 0). Jari tangan asli (2 s.d. 5 jari)
+        # secara anatomis WAJIB memiliki celah lembah yang memisahkan antar jari.
+        if tip_count >= 2 and defect_count == 0 and solidity >= 0.82:
+            return "NONE", 0.0, {}
+        if tip_count >= 3 and defect_count == 0:
+            return "NONE", 0.0, {}
+
         confidence = 0.95
         if tip_count >= 5 or (tip_count == 4 and defect_count >= 4):
             detected_seal = "5_FINGERS"   # 5 Jari -> Quick Cast Slot 1 (D)
-        elif tip_count == 4:
+        elif tip_count == 4 and defect_count >= 2:
             detected_seal = "4_FINGERS"   # 4 Jari -> Invoke (R)
-        elif tip_count == 3:
+        elif tip_count == 3 and defect_count >= 1:
             detected_seal = "3_FINGERS"   # 3 Jari -> Exort (E)
-        elif tip_count == 2:
+        elif tip_count == 2 and (defect_count >= 1 or solidity < 0.82):
             detected_seal = "2_FINGERS"   # 2 Jari -> Wex (W)
-        elif tip_count == 1:
+        elif tip_count == 1 and top_ratio <= 0.42:
             detected_seal = "1_FINGER"    # 1 Jari -> Quas (Q)
-        else:
+        elif tip_count == 0 and solidity >= 0.70 and area <= 28000 and aspect_ratio < 1.40:
             detected_seal = "FIST"        # 0 Jari (Kepal) -> Quick Cast Slot 2 (F)
+        else:
+            detected_seal = "NONE"        # Bukan tangan valid (abaikan wajah/torso)
 
         return detected_seal, confidence, features
 
@@ -269,16 +279,33 @@ class HandSealDetector:
         }
 
         if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            seal_name, confidence, feats = self.classify_seal(largest_contour, mask, frame_bgr.shape[:2])
+            candidates = []
+            for cnt in contours:
+                cnt_area = cv2.contourArea(cnt)
+                if cnt_area < 5000 or cnt_area > 75000:
+                    continue
 
-            if seal_name != "NONE":
-                hull = cv2.convexHull(largest_contour)
+                seal_name, confidence, feats = self.classify_seal(cnt, mask, frame_bgr.shape[:2])
+                if seal_name != "NONE":
+                    tip_cnt = feats.get("tip_count", 0)
+                    defect_cnt = feats.get("defect_count", 0)
+                    # Skor: Prioritas utama kontur tangan yang memiliki jari aktif (> 0)
+                    score = (tip_cnt * 60000) + (defect_cnt * 5000) + cnt_area
+                    candidates.append((score, cnt, seal_name, confidence, feats))
+
+            if candidates:
+                # Ambil kandidat dengan skor tertinggi (tangan asli selalu menang atas wajah)
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                _, best_cnt, seal_name, confidence, feats = candidates[0]
+
+                hull = cv2.convexHull(best_cnt)
                 info["seal"] = seal_name
-                info["contour"] = largest_contour
+                info["contour"] = best_cnt
                 info["hull"] = hull
                 info["features"] = feats
                 info["confidence"] = confidence
+            else:
+                seal_name = "NONE"
 
             # Logika Pemicuan & Debouncing
             if seal_name not in ["NONE", "UNKNOWN"]:
