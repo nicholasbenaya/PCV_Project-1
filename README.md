@@ -35,15 +35,15 @@ project-1/
 
 ## 🎮 Ringkasan Kedua Tipe Game
 
-### 1. Tipe 1: Dota 2 Invoker Hand Seals (`dota2-invoker/`)
-* **Konsep**: Mengontrol perapalan mantra hero Invoker di game Dota 2 secara *hands-free* menggunakan **Segel Tangan Ninja (*Naruto Jutsu Seals*)**.
-* **Mekanik Segel**:
-  * **Segel Harimau (*Tiger*)** $\rightarrow$ Menambah Orb **Exort (`E`)** (Api)
-  * **Segel Ular (*Snake / Doa*)** $\rightarrow$ Menambah Orb **Quas (`Q`)** (Es)
-  * **Segel Silang (*Cross / Kage Bunshin*)** $\rightarrow$ Menambah Orb **Wex (`W`)** (Petir)
-  * **Segel Kambing / Kepal (*Ram / Fist*)** $\rightarrow$ **Invoke (`R`)** (Meracik 10 mantra)
-  * **Telapak Tangan Terbuka (*Open Palm*)** $\rightarrow$ **Quick Cast Spell 1 (`D`)**
-  * **Dua Telapak Terbuka (*Dual Palm*)** $\rightarrow$ **Quick Cast Spell 2 (`F`)**
+### 1. Tipe 1: Dota 2 Invoker Hand Pose Controller (`dota2-invoker/`)
+* **Konsep**: Mengontrol perapalan mantra hero Invoker di game Dota 2 secara *hands-free* menggunakan **Penghitungan Jari & Gestur Tangan (Convexity Defects & Geometry)**.
+* **Mekanik Gestur**:
+  * **1 Jari** $\rightarrow$ Menambah Orb **Quas (`Q`)** (Es)
+  * **2 Jari** $\rightarrow$ Menambah Orb **Wex (`W`)** (Petir)
+  * **3 Jari** $\rightarrow$ Menambah Orb **Exort (`E`)** (Api)
+  * **4 Jari** $\rightarrow$ **Invoke (`R`)** (Meracik 10 mantra)
+  * **5 Jari (Telapak Terbuka)** $\rightarrow$ **Quick Cast Spell 1 (`D`)**
+  * **Kepal (Fist / 0 Jari)** $\rightarrow$ **Quick Cast Spell 2 (`F`)**
 * **Eksekusi**:
   ```bash
   python dota2-invoker/main.py

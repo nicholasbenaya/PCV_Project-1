@@ -120,7 +120,7 @@ class HandSealDetector:
         cx = int(m["m10"] / max(1, m["m00"])) if m["m00"] > 0 else x + w // 2
         cy = int(m["m01"] / max(1, m["m00"])) if m["m00"] > 0 else y + h // 2
 
-        # Analisis Convexity Defects
+        # Analisis Convexity Defects dengan Filter Sudut Lancip (Aturan Cosinus)
         hull_indices = cv2.convexHull(contour, returnPoints=False)
         defect_count = 0
         deep_defects = []
@@ -130,11 +130,27 @@ class HandSealDetector:
                 if defects is not None:
                     defects = defects.reshape(-1, 4)
                     for i in range(defects.shape[0]):
-                        s, e, f, d = defects[i]
-                        depth = d / 256.0  # Konversi ke piksel
-                        if depth > 18.0:
-                            defect_count += 1
-                            deep_defects.append(contour[f][0])
+                        s_idx, e_idx, f_idx, d = defects[i]
+                        start = contour[s_idx][0]
+                        end = contour[e_idx][0]
+                        far = contour[f_idx][0]
+                        depth = d / 256.0  # Konversi ke satuan piksel
+
+                        # Hitung panjang ketiga sisi segitiga
+                        a = float(np.linalg.norm(end - start))
+                        b = float(np.linalg.norm(far - start))
+                        c = float(np.linalg.norm(end - far))
+
+                        # Aturan Cosinus: cos(theta) = (b^2 + c^2 - a^2) / (2 * b * c)
+                        if b * c > 0:
+                            cos_val = np.clip((b**2 + c**2 - a**2) / (2.0 * b * c), -1.0, 1.0)
+                            angle = float(np.degrees(np.arccos(cos_val)))
+
+                            # Celah antar jari valid jika sudut lancip (<= 88 derajat)
+                            # kedalaman cukup (> 18 px) dan tidak di pergelangan tangan
+                            if angle <= 88.0 and depth > 18.0 and far[1] < (y + int(h * 0.85)):
+                                defect_count += 1
+                                deep_defects.append(far)
             except cv2.error:
                 defect_count = 0
 
@@ -156,55 +172,36 @@ class HandSealDetector:
             "aspect_ratio": aspect_ratio,
             "solidity": solidity,
             "defect_count": defect_count,
+            "deep_defects": deep_defects,
             "top_ratio": top_ratio,
             "centroid": (cx, cy)
         }
 
-        # --- Aturan Klasifikasi Segel Naruto ---
-        detected_seal = "UNKNOWN"
-        confidence = 0.5
+        # --- Pemetaan Gestur Tangan ke Tombol Invoker ---
+        # 1 untuk Q (Quas), 2 untuk W (Wex), 3 untuk E (Exort),
+        # 4 untuk R (Invoke), 5 untuk D (Quick Cast D), Kepal untuk F (Quick Cast F)
+        confidence = 0.90
+        if defect_count >= 4:
+            detected_seal = "5_FINGERS"   # 5 Jari -> Quick Cast Slot 1 (D)
+        elif defect_count == 3:
+            detected_seal = "4_FINGERS"   # 4 Jari -> Invoke (R)
+        elif defect_count == 2:
+            detected_seal = "3_FINGERS"   # 3 Jari -> Exort (E)
+        elif defect_count == 1:
+            detected_seal = "2_FINGERS"   # 2 Jari -> Wex (W)
+        elif defect_count == 0:
+            # Membedakan 1 Jari (tegak lancip) vs Kepal (bulat padat)
+            if aspect_ratio >= 1.22 and top_ratio <= 0.48:
+                detected_seal = "1_FINGER"  # 1 Jari -> Quas (Q)
+                confidence = 0.88
+            else:
+                detected_seal = "FIST"      # Kepal -> Quick Cast Slot 2 (F)
+                confidence = 0.92
+        else:
+            detected_seal = "UNKNOWN"
+            confidence = 0.5
 
-        # 1. TIGER SEAL (Segel Harimau - Tora) -> EXORT (E)
-        # Dua jari telunjuk tegak ke atas rapat, jari lain mengunci.
-        # Ciri: Sangat vertikal (AR tinggi), puncak lancip (top_ratio kecil), solidity sedang-tinggi.
-        if aspect_ratio >= 1.35 and top_ratio <= 0.42 and 0.65 <= solidity <= 0.88:
-            detected_seal = "TIGER"
-            confidence = min(0.95, 0.6 + (aspect_ratio - 1.35) * 0.2 + (0.45 - top_ratio))
-
-        # 2. SNAKE SEAL (Segel Ular - Mi / Doa) -> QUAS (Q)
-        # Kedua telapak tangan menempel rapat tegak ke atas seperti berdoa.
-        # Ciri: Aspek vertikal lonjong, solidity sangat tinggi (minim rongga), sedikit lekukan.
-        elif aspect_ratio >= 1.20 and solidity >= 0.84 and defect_count <= 2:
-            detected_seal = "SNAKE"
-            confidence = min(0.95, 0.7 + (solidity - 0.84) * 2.0)
-
-        # 3. CLONE / CROSS SEAL (Segel Silang / Burung) -> WEX (W)
-        # Dua jari telunjuk bersilangan atau bentuk salib 'X' / '+'.
-        # Ciri: Proporsional horizontal-vertikal (AR ~ 0.8 - 1.3), solidity sedang, ada tonjolan horizontal.
-        elif 0.75 <= aspect_ratio <= 1.30 and 0.54 <= solidity <= 0.78 and defect_count in [2, 3, 4]:
-            detected_seal = "CROSS"
-            confidence = 0.85
-
-        # 4. RAM / FIST SEAL (Segel Kambing / Kepal Erat) -> INVOKE (R)
-        # Kedua tangan mengepal erat terkunci di depan dada.
-        # Ciri: Bentuk padat membulat, AR ~ 0.8 - 1.25, solidity tinggi, 0 atau 1 lekukan.
-        elif 0.80 <= aspect_ratio <= 1.25 and solidity >= 0.83 and defect_count <= 1:
-            detected_seal = "RAM"
-            confidence = min(0.95, 0.75 + (solidity - 0.83) * 1.5)
-
-        # 5. OPEN PALM (Telapak Tangan Terbuka) -> QUICK CAST D
-        # 1 tangan terbuka menghadap kamera dengan jari mengembang.
-        # Ciri: Banyak lekukan jari (defects >= 3), solidity rendah (< 0.72).
-        elif defect_count >= 3 and solidity < 0.72 and aspect_ratio <= 1.4:
-            detected_seal = "OPEN_PALM"
-            confidence = 0.88
-
-        # 6. DUAL PALM / BOAR (Dua Tangan Terbuka Menyamping / Segel Babi) -> QUICK CAST F
-        # Dua telapak tangan terbuka lebar ke depan.
-        # Ciri: Lebar melebihi tinggi (AR <= 0.75 atau w > h * 1.3).
-        elif aspect_ratio <= 0.75 and area > 18000:
-            detected_seal = "DUAL_PALM"
-            confidence = 0.85
+        return detected_seal, confidence, features
 
         return detected_seal, confidence, features
 

@@ -154,7 +154,24 @@ class InvokerController:
 
         # --- 3. Status Pose Tangan Saat Ini & Charge Meter ---
         status_x = slot_f_x + 170
-        cv2.putText(frame, f"POSE: {current_seal}", (status_x, hud_y + 36), cv2.FONT_HERSHEY_DUPLEX, 0.68, (0, 235, 255), 2, cv2.LINE_AA)
+        pose_labels = {
+            "1_FINGER": "1 JARI [Q]",
+            "2_FINGERS": "2 JARI [W]",
+            "3_FINGERS": "3 JARI [E]",
+            "4_FINGERS": "4 JARI [R]",
+            "5_FINGERS": "5 JARI [D]",
+            "FIST": "KEPAL [F]",
+            "TIGER": "3 JARI [E]",
+            "SNAKE": "1 JARI [Q]",
+            "CROSS": "2 JARI [W]",
+            "RAM": "4 JARI [R]",
+            "OPEN_PALM": "5 JARI [D]",
+            "DUAL_PALM": "KEPAL [F]",
+            "NONE": "NONE",
+            "UNKNOWN": "..."
+        }
+        display_pose = pose_labels.get(current_seal, current_seal)
+        cv2.putText(frame, f"POSE: {display_pose}", (status_x, hud_y + 36), cv2.FONT_HERSHEY_DUPLEX, 0.68, (0, 235, 255), 2, cv2.LINE_AA)
 
         # Progress bar pengisian hold
         bar_w = 180

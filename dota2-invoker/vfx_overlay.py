@@ -91,22 +91,37 @@ class VFXOverlay:
         cv2.polylines(canvas, [np.array(pts2, dtype=np.int32)], isClosed=True, color=color, thickness=1, lineType=cv2.LINE_AA)
 
     def draw_elemental_sparks(self, canvas: np.ndarray, cx: int, cy: int, seal_name: str):
-        """Memancarkan partikel sesuai elemen segel yang sedang dipegang."""
-        if seal_name == "TIGER":  # Exort - Api (Merah / Oranye)
+        """Memancarkan partikel sesuai elemen gestur yang sedang dipegang."""
+        if seal_name in ["3_FINGERS", "TIGER"]:  # Exort - Api (Merah / Oranye)
             color = (30, 110, 255)
             vx = np.random.uniform(-40, 40)
             vy = np.random.uniform(-140, -40)  # Membara ke atas
             self.particles.append(Particle(cx + np.random.randint(-25, 25), cy + np.random.randint(-15, 15), vx, vy, color, 5, 0.45))
-        elif seal_name == "SNAKE":  # Quas - Es (Cyan / Biru Es)
+        elif seal_name in ["1_FINGER", "SNAKE"]:  # Quas - Es (Cyan / Biru Es)
             color = (255, 230, 80)
             vx = np.random.uniform(-60, 60)
             vy = np.random.uniform(-60, 60)
             self.particles.append(Particle(cx + np.random.randint(-20, 20), cy + np.random.randint(-20, 20), vx, vy, color, 4, 0.4))
-        elif seal_name == "CROSS":  # Wex - Petir (Ungu / Pink)
+        elif seal_name in ["2_FINGERS", "CROSS"]:  # Wex - Petir (Ungu / Pink)
             color = (255, 60, 200)
             vx = np.random.uniform(-120, 120)
             vy = np.random.uniform(-120, 120)
             self.particles.append(Particle(cx + np.random.randint(-30, 30), cy + np.random.randint(-30, 30), vx, vy, color, 3, 0.25))
+        elif seal_name in ["4_FINGERS", "RAM"]:  # Invoke - Emerald / Gold
+            color = (60, 240, 170)
+            vx = np.random.uniform(-80, 80)
+            vy = np.random.uniform(-80, 80)
+            self.particles.append(Particle(cx + np.random.randint(-25, 25), cy + np.random.randint(-25, 25), vx, vy, color, 4, 0.35))
+        elif seal_name in ["5_FINGERS", "OPEN_PALM"]:  # Quick Cast D - Gold
+            color = (80, 255, 255)
+            vx = np.random.uniform(-100, 100)
+            vy = np.random.uniform(-100, 100)
+            self.particles.append(Particle(cx + np.random.randint(-30, 30), cy + np.random.randint(-30, 30), vx, vy, color, 5, 0.3))
+        elif seal_name in ["FIST", "DUAL_PALM"]:  # Quick Cast F - Violet Burst
+            color = (255, 120, 200)
+            vx = np.random.uniform(-100, 100)
+            vy = np.random.uniform(-100, 100)
+            self.particles.append(Particle(cx + np.random.randint(-30, 30), cy + np.random.randint(-30, 30), vx, vy, color, 5, 0.3))
 
     def update_and_render(self, frame: np.ndarray, info: Dict[str, Any], progress: float):
         """Update dan render seluruh overlay partikel, lingkaran sihir, dan HUD."""
@@ -124,12 +139,18 @@ class VFXOverlay:
         if centroid is not None and seal not in ["NONE", "UNKNOWN"]:
             cx, cy = centroid
             color_map = {
-                "TIGER": (40, 130, 255),      # Orange/Red
-                "SNAKE": (255, 220, 70),      # Ice Cyan
-                "CROSS": (255, 80, 220),      # Lightning Magenta
-                "RAM": (60, 240, 180),        # Gold / Green Invoke
-                "OPEN_PALM": (80, 255, 255),  # Yellow Beam
-                "DUAL_PALM": (255, 200, 255)  # Lavender Burst
+                "1_FINGER": (255, 220, 70),   # Quas (Ice Cyan)
+                "2_FINGERS": (255, 80, 220),  # Wex (Lightning Magenta)
+                "3_FINGERS": (40, 130, 255),  # Exort (Fire Orange/Red)
+                "4_FINGERS": (60, 240, 180),  # Invoke (Gold/Emerald)
+                "5_FINGERS": (80, 255, 255),  # Cast D (Yellow Beam)
+                "FIST": (255, 120, 200),      # Cast F (Violet Burst)
+                "TIGER": (40, 130, 255),
+                "SNAKE": (255, 220, 70),
+                "CROSS": (255, 80, 220),
+                "RAM": (60, 240, 180),
+                "OPEN_PALM": (80, 255, 255),
+                "DUAL_PALM": (255, 200, 255)
             }
             seal_color = color_map.get(seal, (200, 200, 200))
             radius = int(80 + 35 * progress)

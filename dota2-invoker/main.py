@@ -43,14 +43,14 @@ def main():
     fps = 0.0
 
     print("===================================================================")
-    print("      DOTA 2 INVOKER NARUTO HAND SEALS (PURE OPENCV)")
+    print("        DOTA 2 INVOKER HAND POSE CONTROLLER (PURE OPENCV)")
     print("===================================================================")
-    print(" - TIGER SEAL     -> EXORT (E)    [Elemen Api]")
-    print(" - SNAKE SEAL     -> QUAS (Q)     [Elemen Es]")
-    print(" - CROSS/BIRD     -> WEX (W)      [Elemen Petir]")
-    print(" - RAM/FIST       -> INVOKE (R)   [Rapal Mantra]")
-    print(" - OPEN PALM      -> QUICK CAST D [Mantra Slot 1]")
-    print(" - DUAL PALM      -> QUICK CAST F [Mantra Slot 2]")
+    print(" - 1 JARI         -> QUAS (Q)     [Elemen Es]")
+    print(" - 2 JARI         -> WEX (W)      [Elemen Petir]")
+    print(" - 3 JARI         -> EXORT (E)    [Elemen Api]")
+    print(" - 4 JARI         -> INVOKE (R)   [Rapal Mantra]")
+    print(" - 5 JARI         -> QUICK CAST D [Mantra Slot 1]")
+    print(" - KEPAL (FIST)   -> QUICK CAST F [Mantra Slot 2]")
     print("-------------------------------------------------------------------")
     print(" Shortcut: [C] Kalibrasi | [I] Toggle DirectInput | [M] Mask PiP | [Q] Keluar")
     print("===================================================================\n")
@@ -103,32 +103,38 @@ def main():
         if triggered_action:
             cx, cy = info["features"].get("centroid", (w // 2, h // 2))
 
-            if triggered_action == "TIGER":
-                invoker.add_orb("E")
-                vfx.trigger_spell_burst(cx, cy, "EXORT (E)", (40, 100, 255))
-            elif triggered_action == "SNAKE":
+            if triggered_action in ["1_FINGER", "SNAKE"]:
                 invoker.add_orb("Q")
                 vfx.trigger_spell_burst(cx, cy, "QUAS (Q)", (255, 210, 80))
-            elif triggered_action == "CROSS":
+            elif triggered_action in ["2_FINGERS", "CROSS"]:
                 invoker.add_orb("W")
                 vfx.trigger_spell_burst(cx, cy, "WEX (W)", (255, 70, 220))
-            elif triggered_action == "RAM":
+            elif triggered_action in ["3_FINGERS", "TIGER"]:
+                invoker.add_orb("E")
+                vfx.trigger_spell_burst(cx, cy, "EXORT (E)", (40, 100, 255))
+            elif triggered_action in ["4_FINGERS", "RAM"]:
                 spell_name, col = invoker.invoke()
-                vfx.trigger_spell_burst(cx, cy, f"INVOKE: {spell_name}", col)
-            elif triggered_action == "OPEN_PALM":
+                vfx.trigger_spell_burst(cx, cy, f"INVOKE (R): {spell_name}", col)
+            elif triggered_action in ["5_FINGERS", "OPEN_PALM"]:
                 spell_name, col = invoker.cast_spell_d()
                 vfx.trigger_spell_burst(cx, cy, f"CAST D: {spell_name}!", col)
-            elif triggered_action == "DUAL_PALM":
+            elif triggered_action in ["FIST", "DUAL_PALM"]:
                 spell_name, col = invoker.cast_spell_f()
                 vfx.trigger_spell_burst(cx, cy, f"CAST F: {spell_name}!", col)
 
         # Render Visual Effects & Procedural Magic Circle Overlay
         vfx.update_and_render(frame, info, progress)
 
-        # Gambar Kontur dan Convex Hull Tangan
+        # Gambar Kontur, Convex Hull, dan Titik Lekukan Jari (Defects)
         if info["contour"] is not None:
             cv2.drawContours(frame, [info["contour"]], -1, (0, 240, 160), 2, cv2.LINE_AA)
             cv2.drawContours(frame, [info["hull"]], -1, (255, 255, 255), 1, cv2.LINE_AA)
+
+            # Gambar titik-titik lembah antar jari untuk visualisasi
+            deep_defects = info["features"].get("deep_defects", [])
+            for pt in deep_defects:
+                cv2.circle(frame, tuple(pt), 6, (0, 0, 255), -1, cv2.LINE_AA)
+                cv2.circle(frame, tuple(pt), 8, (255, 255, 255), 1, cv2.LINE_AA)
 
         # Render Antarmuka HUD Dota 2 di bagian bawah
         current_seal = info.get("seal", "NONE")

@@ -73,16 +73,16 @@ Kontur terbesar diekstraksi untuk menghitung deskriptor bentuk invariabel:
 
 ---
 
-## 3. Pemetaan Segel Naruto ke Mekanik Invoker
+## 3. Pemetaan Gestur Tangan ke Mekanik Invoker
 
-| Nama Segel | Karakteristik Geometris OpenCV | Aksi Invoker | Tombol DirectX |
+| Gestur Tangan | Ciri Geometri Citra (OpenCV) | Aksi Invoker | Tombol DirectX |
 | :--- | :--- | :--- | :---: |
-| **Segel Harimau (*Tiger / Tora*)** | Dua jari telunjuk tegak ke atas rapat ($AR \ge 1.35$, $S \in [0.65, 0.88]$, puncak runcing) | **Exort** (Elemen Api) | `E` |
-| **Segel Ular (*Snake / Mi*)** | Dua telapak tangan menempel rapat tegak ($AR \ge 1.20$, $S \ge 0.84$, sedikit lekukan) | **Quas** (Elemen Es) | `Q` |
-| **Segel Silang (*Cross / Kage Bunshin*)** | Dua jari menyilang tanda '+' ($0.75 \le AR \le 1.30$, $0.54 \le S \le 0.78$) | **Wex** (Elemen Petir) | `W` |
-| **Segel Kambing / Kepal (*Ram / Fist*)** | Dua tangan mengepal menyatu rapat ($0.80 \le AR \le 1.25$, $S \ge 0.83$, 0 lekukan) | **Invoke** (Racik Mantra) | `R` |
-| **Telapak Terbuka (*Open Palm*)** | 5 Jari mengembang menghadap kamera ($Defects \ge 3$, $S < 0.72$) | **Quick Cast Slot 1** | `D` |
-| **Dua Telapak Terbuka (*Dual Palm*)** | Dua telapak tangan terbuka menyamping ($w > h \times 1.35$, area besar) | **Quick Cast Slot 2** | `F` |
+| **1 Jari** | $AR \ge 1.22$, Puncak Runcing ($top \le 0.48$), 0 Celah | **Quas** (Elemen Es) | `Q` |
+| **2 Jari** (Peace / V) | 1 Celah Jari Valid ($Defect = 1$, Sudut $\le 88^\circ$) | **Wex** (Elemen Petir) | `W` |
+| **3 Jari** | 2 Celah Jari Valid ($Defects = 2$) | **Exort** (Elemen Api) | `E` |
+| **4 Jari** | 3 Celah Jari Valid ($Defects = 3$) | **Invoke** (Racik Mantra) | `R` |
+| **5 Jari** (Telapak Terbuka) | $\ge 4$ Celah Jari Valid ($Defects \ge 4$), $S < 0.72$ | **Quick Cast Slot 1** | `D` |
+| **Kepal** (*Fist / 0 Jari*) | 0 Celah, Bentuk Padat Kompak ($S \ge 0.83$, $AR \le 1.25$) | **Quick Cast Slot 2** | `F` |
 
 ---
 
