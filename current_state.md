@@ -35,6 +35,10 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 - Menggunakan selisih multi-channel BGR + Chroma YCrCb (kebal metamerisme grayscale) dengan threshold adaptif $T_{\text{bg}} = 18$.
 - Menerapkan **Static Background Artifact Invalidation**: Hanya area yang *sudah ada dan sewarna kulit di background* (wajah/meja kayu yang diam) yang dieliminasi, sehingga tangan yang diangkat di depan dinding/baju tidak akan pernah ikut tersubtrak/hilang.
 - Tombol **`[N]`** disediakan untuk mereset / me-bypass background subtraction secara instan.
+- **Khusus Black Glove Mode (`PRESET_GLOVE`)**: Dilengkapi **Dual-Layer Hair & Dark Subtraction**:
+  1. *Static Dark Mask Subtraction (`[B]`)*: Seluruh area gelap di background (rambut hitam, pakaian gelap, bayangan) dilacak dan dieliminasi permanen dari masker sarung tangan.
+  2. *Dynamic Facial-Skin Anchored Hair Suppression*: Mendeteksi anchor wajah via warna kulit YCrCb dan secara otomatis mengecualikan kotak zona rambut di atas dahi, sehingga kursor sarung tangan hitam tidak akan pernah tersangkut pada rambut pemain saat tangan melintas di dekat kepala.
+  3. *Pose-Scoring Nearest Neighbor*: Memberikan penalti jarak pada kontur amorf tanpa pose (seperti sisa rambut) agar pelacak selalu memprioritaskan sarung tangan.
 
 ### B. Pilar 2: Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)
 - Tanpa model learning / XML classifier, sistem membedakan wajah dari tangan menggunakan analisis lubang internal kontur.

@@ -139,6 +139,7 @@ class HandTracker:
         self.bg_frame: Optional[np.ndarray] = None
         self.bg_gray: Optional[np.ndarray] = None
         self.bg_color_mask: Optional[np.ndarray] = None
+        self.bg_dark_static: Optional[np.ndarray] = None
 
         # 2. State Open-Palm Lock-On & Nearest-Neighbor Tracking
         self.is_hand_locked: bool = False
@@ -184,6 +185,16 @@ class HandTracker:
         gray = cv2.cvtColor(self.bg_frame, cv2.COLOR_BGR2GRAY)
         self.bg_gray = cv2.GaussianBlur(gray, (7, 7), 0)
         self.bg_color_mask = self.get_color_mask(self.bg_frame)
+
+        # Di Black Glove Mode: Ekstrak seluruh objek gelap latar belakang (rambut, pakaian gelap, bayangan)
+        hsv_bg = cv2.cvtColor(cv2.GaussianBlur(self.bg_frame, (7, 7), 0), cv2.COLOR_BGR2HSV)
+        bg_dark = cv2.inRange(hsv_bg, self.glove_lower, self.glove_upper)
+        self.bg_dark_static = cv2.dilate(
+            bg_dark,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19)),
+            iterations=1,
+        )
+
         self.reset_lock()
         return True
 
@@ -192,6 +203,7 @@ class HandTracker:
         self.bg_frame = None
         self.bg_gray = None
         self.bg_color_mask = None
+        self.bg_dark_static = None
         self.reset_lock()
 
     def reset_lock(self) -> None:
@@ -208,6 +220,14 @@ class HandTracker:
         self.preset_mode = (self.preset_mode + 1) % len(PRESET_NAMES)
         if self.bg_frame is not None:
             self.bg_color_mask = self.get_color_mask(self.bg_frame)
+            if self.preset_mode == PRESET_GLOVE:
+                hsv_bg = cv2.cvtColor(cv2.GaussianBlur(self.bg_frame, (7, 7), 0), cv2.COLOR_BGR2HSV)
+                bg_dark = cv2.inRange(hsv_bg, self.glove_lower, self.glove_upper)
+                self.bg_dark_static = cv2.dilate(
+                    bg_dark,
+                    cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (19, 19)),
+                    iterations=1,
+                )
         self.reset_lock()
         return PRESET_NAMES[self.preset_mode]
 
@@ -280,6 +300,30 @@ class HandTracker:
         except Exception:
             pass
 
+    def get_hair_exclusion_mask(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Mendeteksi anchor wajah berbasis warna kulit (YCrCb) dan mengecualikan area rambut di atasnya."""
+        h, w = frame_bgr.shape[:2]
+        hair_mask = np.zeros((h, w), dtype=np.uint8)
+
+        blurred = cv2.GaussianBlur(frame_bgr, (7, 7), 0)
+        ycrcb = cv2.cvtColor(blurred, cv2.COLOR_BGR2YCrCb)
+        skin = cv2.inRange(ycrcb, self.ycrcb_lower, self.ycrcb_upper)
+        skin_clean = cv2.morphologyEx(skin, cv2.MORPH_OPEN, self._kernel_open, iterations=1)
+
+        cnts, _ = cv2.findContours(skin_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in cnts:
+            area = float(cv2.contourArea(cnt))
+            if 3500 <= area <= 140000:
+                fx, fy, fw, fh = cv2.boundingRect(cnt)
+                # Wajah umumnya berada di separuh atas layar dengan rasio w/h wajar
+                if fy < int(h * 0.75) and 0.45 <= float(fw) / max(1.0, float(fh)) <= 1.85:
+                    hx1 = max(0, fx - int(0.25 * fw))
+                    hx2 = min(w, fx + fw + int(0.25 * fw))
+                    hy1 = max(0, fy - int(0.85 * fh))
+                    hy2 = min(h, fy + int(0.20 * fh))
+                    cv2.rectangle(hair_mask, (hx1, hy1), (hx2, hy2), 255, -1)
+        return hair_mask
+
     def get_color_mask(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Menghasilkan masker biner berdasarkan warna (Skin / Black Glove / Object)."""
         blurred = cv2.GaussianBlur(frame_bgr, (7, 7), 0)
@@ -297,7 +341,10 @@ class HandTracker:
 
         elif self.preset_mode == PRESET_GLOVE:
             hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-            return cv2.inRange(hsv, self.glove_lower, self.glove_upper)
+            raw_glove = cv2.inRange(hsv, self.glove_lower, self.glove_upper)
+            # Dynamic Hair Exclusion: hilangkan area rambut tepat di atas anchor wajah kulit
+            hair_mask = self.get_hair_exclusion_mask(frame_bgr)
+            return cv2.bitwise_and(raw_glove, cv2.bitwise_not(hair_mask))
 
         else:
             hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
@@ -386,32 +433,39 @@ class HandTracker:
         color_mask = self.get_color_mask(frame)
 
         if self.bg_frame is not None:
-            # Perbedaan multi-channel (BGR + Chroma YCrCb) agar kebal terhadap metamerisme grayscale
-            blurred_curr = cv2.GaussianBlur(frame, (7, 7), 0)
-            blurred_bg = cv2.GaussianBlur(self.bg_frame, (7, 7), 0)
-
-            diff_bgr = cv2.absdiff(blurred_curr, blurred_bg)
-            diff_max_bgr = np.max(diff_bgr, axis=2)
-
-            curr_ycrcb = cv2.cvtColor(blurred_curr, cv2.COLOR_BGR2YCrCb)
-            bg_ycrcb = cv2.cvtColor(blurred_bg, cv2.COLOR_BGR2YCrCb)
-            diff_ycrcb = cv2.absdiff(curr_ycrcb, bg_ycrcb)
-            diff_chroma = np.maximum(diff_ycrcb[:, :, 1], diff_ycrcb[:, :, 2])
-
-            diff_total = np.maximum(diff_max_bgr, diff_chroma)
-
-            # Artefak statis = area yang SUDAH terdeteksi saat rekam BG dan TIDAK mengalami perubahan (diff < BG_DIFF_THRESHOLD)
-            if self.bg_color_mask is not None:
-                static_bg_artifacts = cv2.bitwise_and(
-                    self.bg_color_mask,
-                    cv2.inRange(diff_total, 0, BG_DIFF_THRESHOLD),
-                )
-                static_bg_artifacts = cv2.dilate(static_bg_artifacts, self._kernel_open, iterations=2)
-                raw_mask = cv2.bitwise_and(color_mask, cv2.bitwise_not(static_bg_artifacts))
+            if self.preset_mode == PRESET_GLOVE:
+                # Di Black Glove Mode: Eliminasi penuh rambut, pakaian gelap, dan bayangan statis dari background
+                if self.bg_dark_static is not None:
+                    raw_mask = cv2.bitwise_and(color_mask, cv2.bitwise_not(self.bg_dark_static))
+                else:
+                    raw_mask = color_mask
             else:
-                _, fg_mask = cv2.threshold(diff_total, BG_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
-                fg_mask = cv2.dilate(fg_mask, self._kernel_close, iterations=2)
-                raw_mask = cv2.bitwise_and(color_mask, fg_mask)
+                # Perbedaan multi-channel (BGR + Chroma YCrCb) agar kebal terhadap metamerisme grayscale
+                blurred_curr = cv2.GaussianBlur(frame, (7, 7), 0)
+                blurred_bg = cv2.GaussianBlur(self.bg_frame, (7, 7), 0)
+
+                diff_bgr = cv2.absdiff(blurred_curr, blurred_bg)
+                diff_max_bgr = np.max(diff_bgr, axis=2)
+
+                curr_ycrcb = cv2.cvtColor(blurred_curr, cv2.COLOR_BGR2YCrCb)
+                bg_ycrcb = cv2.cvtColor(blurred_bg, cv2.COLOR_BGR2YCrCb)
+                diff_ycrcb = cv2.absdiff(curr_ycrcb, bg_ycrcb)
+                diff_chroma = np.maximum(diff_ycrcb[:, :, 1], diff_ycrcb[:, :, 2])
+
+                diff_total = np.maximum(diff_max_bgr, diff_chroma)
+
+                # Artefak statis = area yang SUDAH terdeteksi saat rekam BG dan TIDAK mengalami perubahan (diff < BG_DIFF_THRESHOLD)
+                if self.bg_color_mask is not None:
+                    static_bg_artifacts = cv2.bitwise_and(
+                        self.bg_color_mask,
+                        cv2.inRange(diff_total, 0, BG_DIFF_THRESHOLD),
+                    )
+                    static_bg_artifacts = cv2.dilate(static_bg_artifacts, self._kernel_open, iterations=2)
+                    raw_mask = cv2.bitwise_and(color_mask, cv2.bitwise_not(static_bg_artifacts))
+                else:
+                    _, fg_mask = cv2.threshold(diff_total, BG_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
+                    fg_mask = cv2.dilate(fg_mask, self._kernel_close, iterations=2)
+                    raw_mask = cv2.bitwise_and(color_mask, fg_mask)
         else:
             raw_mask = color_mask
 
@@ -535,7 +589,11 @@ class HandTracker:
                     cx, cy = cand[1]
                     dist = math.hypot(cx - lx, cy - ly)
                     if dist <= LOCKON_MAX_DISTANCE:
-                        in_range_cands.append((dist, cand))
+                        # Prioritaskan kontur yang memiliki pose valid (HIGH_FIVE atau FIST)
+                        # Kontur amorf tanpa pose (seperti sisa rambut) diberi penalti jarak agar tidak membajak kursor
+                        raw_pose = cand[9]
+                        pose_penalty = 0.0 if raw_pose in (POSE_HIGH_FIVE, POSE_FIST) else 50.0
+                        in_range_cands.append((dist + pose_penalty, cand))
 
                 if in_range_cands:
                     in_range_cands.sort(key=lambda x: x[0])
