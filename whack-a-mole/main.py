@@ -104,6 +104,7 @@ def run_game() -> None:
             current_time = time.time()
 
             # 4 Pilar PCD Klasik: BG Subtraction, RETR_CCOMP Face Rejection, Open-Palm Lock-On, dan Nearest-Neighbor
+            # Selalu diproses pada frame kamera mentah (murni tanpa coretan UI/tombol)
             hand_result = hand_tracker.process_frame(frame)
 
             # Update alur game, interaksi tombol (FIST click), dan logika tabrakan (FIST whack)
@@ -111,16 +112,19 @@ def run_game() -> None:
             if action_status == "exit":
                 break
 
-            # Render seluruh elemen visual antarmuka pada layar penuh
+            # Buat salinan kanvas untuk dirender visual UI (agar 'frame' mentah tetap murni untuk background capture)
+            display_frame = frame.copy()
+
+            # Render seluruh elemen visual antarmuka pada display_frame
             game_engine.render(
-                frame,
+                display_frame,
                 hand_result,
                 hand_tracker,
                 current_time,
                 show_pip_diagnostic=show_pip_diagnostic,
             )
 
-            cv2.imshow(WINDOW_TITLE, frame)
+            cv2.imshow(WINDOW_TITLE, display_frame)
 
             key = cv2.waitKey(1) & 0xFF
 

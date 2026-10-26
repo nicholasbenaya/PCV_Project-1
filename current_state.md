@@ -35,6 +35,7 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 - Menggunakan selisih multi-channel BGR + Chroma YCrCb (kebal metamerisme grayscale) dengan threshold adaptif $T_{\text{bg}} = 18$.
 - Menerapkan **Static Background Artifact Invalidation**: Hanya area yang *sudah ada dan sewarna kulit di background* (wajah/meja kayu yang diam) yang dieliminasi, sehingga tangan yang diangkat di depan dinding/baju tidak akan pernah ikut tersubtrak/hilang.
 - Tombol **`[N]`** disediakan untuk mereset / me-bypass background subtraction secara instan.
+- **Pemisahan Frame Rendering (`display_frame` vs `raw_frame`)**: Memisahkan kanvas rendering UI dari frame kamera mentah, menjamin tombol menu, HUD teks, dan PiP tidak akan pernah ikut terekam ke dalam frame referensi background saat pemain menekan `[B]`, mencegah tangan teriris/terpotong di belakang tombol menu.
 - **Khusus Black Glove Mode (`PRESET_GLOVE`)**:
   1. *Unified Multi-Channel Background Invalidation (`[B]`)*: Rambut hitam dan pakaian gelap yang diam terekam saat tombol `[B]`, sehingga ketika tangan bersarung bergerak, hanya sarung tangan yang terdeteksi tanpa ada kotak hitam artifisial.
   2. *Pose-Scoring Nearest Neighbor*: Memberikan penalti jarak (+80 px) pada kontur amorf tanpa pose (seperti sisa rambut) sehingga kursor selalu mengunci sarung tangan dan tidak tersangkut di rambut saat tangan melintas di dekat kepala.
