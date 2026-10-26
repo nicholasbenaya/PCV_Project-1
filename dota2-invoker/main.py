@@ -39,6 +39,8 @@ def main():
     # Status Kontrol
     show_mask_pip = True
     calibration_mode = False
+    use_hand_zone = True
+    hand_zone = (260, 60, 1020, 640)  # Area interaksi tangan (eliminasi gorden & rambut)
     toast_msg = ""
     toast_timer = 0.0
     fps_time = time.time()
@@ -151,8 +153,16 @@ def main():
             cv2.imshow(window_name, frame)
             continue
 
-        # Proses Deteksi Tangan & Segel (Murni OpenCV)
-        triggered_action, progress, info, mask = detector.process_frame(frame)
+        # Gambar Area Interaksi Tangan (Hand Zone) jika aktif
+        if use_hand_zone:
+            zx1, zy1, zx2, zy2 = hand_zone
+            cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (0, 200, 255), 1)
+            cv2.putText(frame, "HAND ZONE (AKTIF - GORDEN/RAMBUT TERBLOKIR) [Z: Toggle]",
+                        (zx1 + 10, zy1 + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1, cv2.LINE_AA)
+
+        # Proses Deteksi Tangan (Isolasi Hand Zone aktif)
+        active_roi = hand_zone if use_hand_zone else None
+        triggered_action, progress, info, mask = detector.process_frame(frame, roi_box=active_roi)
 
         # Tangani Aksi yang Terpicu
         if triggered_action:
@@ -177,19 +187,34 @@ def main():
                 spell_name, col = invoker.cast_spell_f()
                 vfx.trigger_spell_burst(cx, cy, f"CAST F: {spell_name}!", col)
 
-        # Render Visual Effects & Procedural Magic Circle Overlay
+        # Render Visual Effects Minimalis
         vfx.update_and_render(frame, info, progress)
 
-        # Gambar Kontur, Convex Hull, dan Titik Lekukan Jari (Defects)
+        # Gambar Kontur, Convex Hull, Lingkaran Telapak, dan Ujung Jari
         if info["contour"] is not None:
             cv2.drawContours(frame, [info["contour"]], -1, (0, 240, 160), 2, cv2.LINE_AA)
             cv2.drawContours(frame, [info["hull"]], -1, (255, 255, 255), 1, cv2.LINE_AA)
 
-            # Gambar titik-titik lembah antar jari untuk visualisasi
-            deep_defects = info["features"].get("deep_defects", [])
-            for pt in deep_defects:
-                cv2.circle(frame, tuple(pt), 6, (0, 0, 255), -1, cv2.LINE_AA)
-                cv2.circle(frame, tuple(pt), 8, (255, 255, 255), 1, cv2.LINE_AA)
+            feats = info.get("features", {})
+            palm_center = feats.get("palm_center", None)
+            palm_radius = feats.get("palm_radius", 0.0)
+
+            # Gambar lingkaran telapak tangan (Palm Circle)
+            if palm_center is not None and palm_radius > 15:
+                cv2.circle(frame, palm_center, int(palm_radius), (0, 255, 200), 2, cv2.LINE_AA)
+                cv2.circle(frame, palm_center, 4, (0, 255, 200), -1)
+
+            # Gambar titik ujung jari nyata (Fingertips) dengan titik merah cerah
+            finger_tips = feats.get("finger_tips", [])
+            for tip in finger_tips:
+                cv2.circle(frame, tuple(tip), 8, (0, 0, 255), -1, cv2.LINE_AA)
+                cv2.circle(frame, tuple(tip), 10, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Indikator teks jumlah jari di atas telapak tangan
+            tip_count = feats.get("tip_count", 0)
+            if palm_center is not None:
+                cv2.putText(frame, f"{tip_count} JARI", (palm_center[0] - 35, palm_center[1] - int(palm_radius) - 15),
+                            cv2.FONT_HERSHEY_DUPLEX, 0.70, (0, 255, 255), 2, cv2.LINE_AA)
 
         # Render Antarmuka HUD Dota 2 di bagian bawah
         current_seal = info.get("seal", "NONE")
@@ -205,7 +230,7 @@ def main():
 
         cv2.putText(frame, f"PCV INVOKER | FPS: {fps:.1f}", (15, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.52, (230, 230, 240), 1, cv2.LINE_AA)
-        cv2.putText(frame, "[C] Kalibrasi  [D] Reset Default  [I] Input Mode  [M] Mask  [R] Reset Orbs", (240, 26),
+        cv2.putText(frame, "[C] Kalibrasi  [Z] Hand Zone  [I] Input Mode  [M] Mask  [R] Reset Orbs", (220, 26),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.44, (180, 190, 210), 1, cv2.LINE_AA)
         cv2.putText(frame, f"INPUT: {input_status} [I]", (w - 230, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.52, status_color, 1, cv2.LINE_AA)
@@ -240,6 +265,11 @@ def main():
             break
         elif key in [ord('c'), ord('C')]:
             calibration_mode = True
+        elif key in [ord('z'), ord('Z')]:
+            use_hand_zone = not use_hand_zone
+            status_str = "AKTIF (Gorden & Rambut Terblokir)" if use_hand_zone else "NONAKTIF (Full Frame)"
+            toast_msg = f"HAND ZONE: {status_str}"
+            toast_timer = 2.5
         elif key in [ord('d'), ord('D')]:
             detector.reset_default_calibration()
             toast_msg = "KALIBRASI DI-RESET KE DEFAULT UNIVERSAL"

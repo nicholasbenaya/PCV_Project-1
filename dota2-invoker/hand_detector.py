@@ -113,16 +113,15 @@ class HandSealDetector:
         _, final_mask = cv2.threshold(cleaned, 127, 255, cv2.THRESH_BINARY)
         return final_mask
 
-    def classify_seal(self, contour: np.ndarray, frame_shape: Tuple[int, int]) -> Tuple[str, float, Dict[str, Any]]:
+    def classify_seal(self, contour: np.ndarray, mask: np.ndarray, frame_shape: Tuple[int, int]) -> Tuple[str, float, Dict[str, Any]]:
         """
-        Klasifikasi Segel Tangan Naruto menggunakan Parameter Geometri Klasik:
-        - Aspect Ratio (AR)
-        - Solidity (S)
-        - Convexity Defects (Jumlah & Kedalaman)
-        - Distribusi Lebar Puncak Kontur
+        Klasifikasi Gestur Tangan (1 s.d. 5 Jari dan Kepal) menggunakan:
+        1. Distance Transform untuk menentukan pusat telapak tangan (Palm Center & Radius)
+        2. Convex Hull Fingertip Distance Metric (Titik puncak di luar lingkaran telapak)
+        3. Convexity Defects dengan Filter Sudut Lancip (Aturan Cosinus)
         """
         area = cv2.contourArea(contour)
-        if area < 6500:
+        if area < 6000:
             return "NONE", 0.0, {}
 
         x, y, w, h = cv2.boundingRect(contour)
@@ -132,12 +131,38 @@ class HandSealDetector:
         hull_area = cv2.contourArea(hull)
         solidity = float(area) / max(1.0, hull_area)
 
-        # Momen Spasial untuk menghitung titik pusat massa (Centroid)
-        m = cv2.moments(contour)
-        cx = int(m["m10"] / max(1, m["m00"])) if m["m00"] > 0 else x + w // 2
-        cy = int(m["m01"] / max(1, m["m00"])) if m["m00"] > 0 else y + h // 2
+        # 1. Distance Transform untuk menemukan Pusat Telapak Tangan (Palm Center)
+        # Gambar kontur tangan saja sebagai masker biner solid tanpa noise/lubang di dalam
+        contour_mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(contour_mask, [contour], -1, 255, thickness=-1, offset=(-x, -y))
+        dist_transform = cv2.distanceTransform(contour_mask, cv2.DIST_L2, 5)
+        _, max_val, _, max_loc = cv2.minMaxLoc(dist_transform)
+        palm_center = (x + max_loc[0], y + max_loc[1])
+        palm_radius = float(max_val)
 
-        # Analisis Convexity Defects dengan Filter Sudut Lancip (Aturan Cosinus)
+        # 2. Deteksi Ujung Jari Nyata (Fingertips) Berdasarkan Jarak ke Pusat Telapak (NMS Peak Selection)
+        candidates = []
+        if palm_radius > 15:
+            for pt in hull[:, 0]:
+                dist = np.hypot(pt[0] - palm_center[0], pt[1] - palm_center[1])
+                # Ujung jari harus berada di luar lingkaran telapak tangan (> 1.28 * radius)
+                # dan tidak berada di bawah pangkal telapak tangan / pergelangan tangan (y < palm_y + 0.35 * R)
+                if dist > (1.28 * palm_radius) and pt[1] < (palm_center[1] + int(palm_radius * 0.35)):
+                    candidates.append((pt, dist))
+
+        # Urutkan kandidat dari jarak terjauh ke terdekat (puncak tertinggi jari diproses duluan)
+        candidates.sort(key=lambda item: item[1], reverse=True)
+
+        # Non-Maximum Suppression (NMS): Hanya simpan titik yang terpisah cukup jauh antar-jari
+        min_tip_dist = max(38.0, palm_radius * 0.52)
+        finger_tips = []
+        for pt, dist in candidates:
+            if not any(np.hypot(pt[0] - p[0], pt[1] - p[1]) < min_tip_dist for p in finger_tips):
+                finger_tips.append(pt)
+
+        tip_count = len(finger_tips)
+
+        # 3. Analisis Celah Antar Jari (Convexity Defects) dengan Filter Sudut Cosinus
         hull_indices = cv2.convexHull(contour, returnPoints=False)
         defect_count = 0
         deep_defects = []
@@ -151,27 +176,24 @@ class HandSealDetector:
                         start = contour[s_idx][0]
                         end = contour[e_idx][0]
                         far = contour[f_idx][0]
-                        depth = d / 256.0  # Konversi ke satuan piksel
+                        depth = d / 256.0
 
-                        # Hitung panjang ketiga sisi segitiga
                         a = float(np.linalg.norm(end - start))
                         b = float(np.linalg.norm(far - start))
                         c = float(np.linalg.norm(end - far))
 
-                        # Aturan Cosinus: cos(theta) = (b^2 + c^2 - a^2) / (2 * b * c)
                         if b * c > 0:
                             cos_val = np.clip((b**2 + c**2 - a**2) / (2.0 * b * c), -1.0, 1.0)
                             angle = float(np.degrees(np.arccos(cos_val)))
 
-                            # Celah antar jari valid jika sudut lancip (<= 88 derajat)
-                            # kedalaman cukup (> 18 px) dan tidak di pergelangan tangan
-                            if angle <= 88.0 and depth > 18.0 and far[1] < (y + int(h * 0.85)):
+                            # Celah antar jari valid jika sudut lancip (<= 88 derajat) dan cukup dalam
+                            if angle <= 88.0 and depth > 18.0 and far[1] < (y + int(h * 0.82)):
                                 defect_count += 1
                                 deep_defects.append(far)
             except cv2.error:
                 defect_count = 0
 
-        # Analisis Lebar Puncak Kontur (Top 15% dari tinggi tangan)
+        # Rasio Puncak 15% Teratas
         top_y_limit = y + int(h * 0.15)
         top_pts = contour[contour[:, :, 1] <= top_y_limit]
         if len(top_pts) > 0:
@@ -188,54 +210,50 @@ class HandSealDetector:
             "bbox": (x, y, w, h),
             "aspect_ratio": aspect_ratio,
             "solidity": solidity,
+            "palm_center": palm_center,
+            "palm_radius": palm_radius,
+            "finger_tips": finger_tips,
+            "tip_count": tip_count,
             "defect_count": defect_count,
             "deep_defects": deep_defects,
             "top_ratio": top_ratio,
-            "centroid": (cx, cy)
+            "centroid": palm_center  # Gunakan palm center sebagai titik pusat stabil
         }
 
-        # --- Pemetaan Gestur Tangan ke Tombol Invoker ---
-        # 1 untuk Q (Quas), 2 untuk W (Wex), 3 untuk E (Exort),
-        # 4 untuk R (Invoke), 5 untuk D (Quick Cast D), Kepal untuk F (Quick Cast F)
-        confidence = 0.90
-        if defect_count >= 4:
+        # --- Klasifikasi Presisi Tinggi Berdasarkan Tip Count ---
+        confidence = 0.95
+        if tip_count >= 5 or (tip_count == 4 and defect_count >= 4):
             detected_seal = "5_FINGERS"   # 5 Jari -> Quick Cast Slot 1 (D)
-        elif defect_count == 3:
+        elif tip_count == 4:
             detected_seal = "4_FINGERS"   # 4 Jari -> Invoke (R)
-        elif defect_count == 2:
+        elif tip_count == 3:
             detected_seal = "3_FINGERS"   # 3 Jari -> Exort (E)
-        elif defect_count == 1:
+        elif tip_count == 2:
             detected_seal = "2_FINGERS"   # 2 Jari -> Wex (W)
-        elif defect_count == 0:
-            # Membedakan 1 Jari (tegak lancip) vs Kepal (bulat padat)
-            if aspect_ratio >= 1.22 and top_ratio <= 0.48:
-                detected_seal = "1_FINGER"  # 1 Jari -> Quas (Q)
-                confidence = 0.88
-            else:
-                detected_seal = "FIST"      # Kepal -> Quick Cast Slot 2 (F)
-                confidence = 0.92
+        elif tip_count == 1:
+            detected_seal = "1_FINGER"    # 1 Jari -> Quas (Q)
         else:
-            detected_seal = "UNKNOWN"
-            confidence = 0.5
+            detected_seal = "FIST"        # 0 Jari (Kepal) -> Quick Cast Slot 2 (F)
 
         return detected_seal, confidence, features
 
-        return detected_seal, confidence, features
-
-    def process_frame(self, frame_bgr: np.ndarray) -> Tuple[Optional[str], float, Dict[str, Any], np.ndarray]:
+    def process_frame(self, frame_bgr: np.ndarray, roi_box: Optional[Tuple[int, int, int, int]] = None) -> Tuple[Optional[str], float, Dict[str, Any], np.ndarray]:
         """
         Memproses satu frame:
         - Segmentasi & pembersihan masker.
-        - Deteksi kontur utama.
-        - Klasifikasi segel dengan meteran penahanan (Debounce Hold Meter).
-        Returns:
-            triggered_action: str atau None (hanya memicu saat meter penuh).
-            progress: float (0.0 s.d. 1.0 pengisian meteran).
-            info: metadata visual.
-            mask: citra biner masker tangan.
+        - Isolasi area interaksi (Hand Zone) jika roi_box diberikan.
+        - Deteksi kontur utama & klasifikasi gestur.
+        - Logika penahanan stabil (Debounce Hold Meter).
         """
         now = time.time()
         mask = self.get_skin_mask(frame_bgr)
+
+        # Jika Hand Zone aktif, eliminasi 100% gangguan gorden/rambut/wajah di luar kotak
+        if roi_box is not None:
+            rx1, ry1, rx2, ry2 = roi_box
+            zone_mask = np.zeros_like(mask)
+            zone_mask[ry1:ry2, rx1:rx2] = 255
+            mask = cv2.bitwise_and(mask, zone_mask)
 
         # Cari Kontur
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -252,7 +270,7 @@ class HandSealDetector:
 
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
-            seal_name, confidence, feats = self.classify_seal(largest_contour, frame_bgr.shape[:2])
+            seal_name, confidence, feats = self.classify_seal(largest_contour, mask, frame_bgr.shape[:2])
             hull = cv2.convexHull(largest_contour)
 
             info["seal"] = seal_name
