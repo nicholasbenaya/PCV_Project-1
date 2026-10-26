@@ -138,6 +138,7 @@ class HandTracker:
         # 1. Background Subtraction Berbasis Referensi (Tombol 'B')
         self.bg_frame: Optional[np.ndarray] = None
         self.bg_gray: Optional[np.ndarray] = None
+        self.bg_color_mask: Optional[np.ndarray] = None
 
         # 2. State Open-Palm Lock-On & Nearest-Neighbor Tracking
         self.is_hand_locked: bool = False
@@ -182,7 +183,16 @@ class HandTracker:
         self.bg_frame = frame_bgr.copy()
         gray = cv2.cvtColor(self.bg_frame, cv2.COLOR_BGR2GRAY)
         self.bg_gray = cv2.GaussianBlur(gray, (7, 7), 0)
+        self.bg_color_mask = self.get_color_mask(self.bg_frame)
+        self.reset_lock()
         return True
+
+    def clear_background(self) -> None:
+        """Menghapus referensi latar belakang (Bypass mode)."""
+        self.bg_frame = None
+        self.bg_gray = None
+        self.bg_color_mask = None
+        self.reset_lock()
 
     def reset_lock(self) -> None:
         """Mereset status lock-on tangan agar mencari gestur HIGH_FIVE baru."""
@@ -196,6 +206,9 @@ class HandTracker:
     def cycle_preset_mode(self) -> str:
         """Berganti ke mode preset segmentasi berikutnya (Skin -> Glove -> Object)."""
         self.preset_mode = (self.preset_mode + 1) % len(PRESET_NAMES)
+        if self.bg_frame is not None:
+            self.bg_color_mask = self.get_color_mask(self.bg_frame)
+        self.reset_lock()
         return PRESET_NAMES[self.preset_mode]
 
     def calibrate_skin_sample(self, roi_bgr: np.ndarray) -> Dict:
@@ -236,6 +249,9 @@ class HandTracker:
             self.object_upper = np.array([min(179, int(h_mean + h_tol)), 255, 255], dtype=np.uint8)
 
         self.is_calibrated = True
+        if self.bg_frame is not None:
+            self.bg_color_mask = self.get_color_mask(self.bg_frame)
+        self.reset_lock()
         self.calib_info = {
             "mode": self.preset_mode,
             "cr_range": [int(self.ycrcb_lower[1]), int(self.ycrcb_upper[1])],
@@ -369,12 +385,33 @@ class HandTracker:
         # 1. Background Subtraction Berbasis Referensi (Tombol 'B') via cv2.absdiff()
         color_mask = self.get_color_mask(frame)
 
-        if self.bg_gray is not None:
-            gray_curr = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (7, 7), 0)
-            diff = cv2.absdiff(gray_curr, self.bg_gray)
-            _, fg_mask = cv2.threshold(diff, BG_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self._kernel_open, iterations=1)
-            raw_mask = cv2.bitwise_and(color_mask, fg_mask)
+        if self.bg_frame is not None:
+            # Perbedaan multi-channel (BGR + Chroma YCrCb) agar kebal terhadap metamerisme grayscale
+            blurred_curr = cv2.GaussianBlur(frame, (7, 7), 0)
+            blurred_bg = cv2.GaussianBlur(self.bg_frame, (7, 7), 0)
+
+            diff_bgr = cv2.absdiff(blurred_curr, blurred_bg)
+            diff_max_bgr = np.max(diff_bgr, axis=2)
+
+            curr_ycrcb = cv2.cvtColor(blurred_curr, cv2.COLOR_BGR2YCrCb)
+            bg_ycrcb = cv2.cvtColor(blurred_bg, cv2.COLOR_BGR2YCrCb)
+            diff_ycrcb = cv2.absdiff(curr_ycrcb, bg_ycrcb)
+            diff_chroma = np.maximum(diff_ycrcb[:, :, 1], diff_ycrcb[:, :, 2])
+
+            diff_total = np.maximum(diff_max_bgr, diff_chroma)
+
+            # Artefak statis = area yang SUDAH terdeteksi saat rekam BG dan TIDAK mengalami perubahan (diff < BG_DIFF_THRESHOLD)
+            if self.bg_color_mask is not None:
+                static_bg_artifacts = cv2.bitwise_and(
+                    self.bg_color_mask,
+                    cv2.inRange(diff_total, 0, BG_DIFF_THRESHOLD),
+                )
+                static_bg_artifacts = cv2.dilate(static_bg_artifacts, self._kernel_open, iterations=2)
+                raw_mask = cv2.bitwise_and(color_mask, cv2.bitwise_not(static_bg_artifacts))
+            else:
+                _, fg_mask = cv2.threshold(diff_total, BG_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
+                fg_mask = cv2.dilate(fg_mask, self._kernel_close, iterations=2)
+                raw_mask = cv2.bitwise_and(color_mask, fg_mask)
         else:
             raw_mask = color_mask
 
@@ -482,7 +519,7 @@ class HandTracker:
                     aspect_ratio=0.0,
                     area=0.0,
                     internal_holes_count=0,
-                    bg_captured=(self.bg_gray is not None),
+                    bg_captured=(self.bg_frame is not None),
                     mask=cleaned_mask,
                     preset_mode=self.preset_mode,
                     preset_name=PRESET_NAMES[self.preset_mode],
@@ -534,7 +571,7 @@ class HandTracker:
                     aspect_ratio=0.0,
                     area=0.0,
                     internal_holes_count=0,
-                    bg_captured=(self.bg_gray is not None),
+                    bg_captured=(self.bg_frame is not None),
                     mask=cleaned_mask,
                     preset_mode=self.preset_mode,
                     preset_name=PRESET_NAMES[self.preset_mode],
@@ -608,7 +645,7 @@ class HandTracker:
             aspect_ratio=aspect_ratio,
             area=max_area,
             internal_holes_count=holes_count,
-            bg_captured=(self.bg_gray is not None),
+            bg_captured=(self.bg_frame is not None),
             mask=cleaned_mask,
             preset_mode=self.preset_mode,
             preset_name=PRESET_NAMES[self.preset_mode],

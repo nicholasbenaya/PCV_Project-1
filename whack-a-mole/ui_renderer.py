@@ -200,7 +200,7 @@ class UIRenderer:
 
         # Baris Indikator Sistem
         audio_str = "ON" if audio_enabled else "OFF"
-        bg_str = "AKTIF (B)" if bg_captured else "BELUM (Tekan B)"
+        bg_str = "AKTIF ([B] / [N] Reset)" if bg_captured else "BYPASS / OFF ([B] Rekam)"
         bg_col = (0, 255, 120) if bg_captured else (255, 180, 80)
         lock_str = "TERKUNCI" if is_locked else "MENUNGGU TELAPAK (OPEN)"
         lock_col = (0, 255, 120) if is_locked else (0, 220, 255)
@@ -232,7 +232,7 @@ class UIRenderer:
             self.draw_button(frame, btn, current_time)
 
         # Petunjuk interaksi bawah
-        hint = "[B] Rekam Background  |  Tunjukkan [OPEN PALM] untuk Mengunci  |  [FIST] Pukul/Klik  |  [V] PiP PCV  |  [M] Ganti Mode"
+        hint = "[B] Rekam BG  |  [N] Reset/Bypass BG  |  [OPEN PALM] Kunci  |  [FIST] Pukul/Klik  |  [V] PiP PCV  |  [M] Mode"
         h_w = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0][0]
         self.draw_text_with_outline(
             frame,

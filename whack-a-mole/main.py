@@ -145,6 +145,11 @@ def run_game() -> None:
                 hand_tracker.capture_background(frame)
                 game_engine.audio.play_sfx("bonk")
 
+            # Reset / Hapus Frame Referensi Latar Belakang (Bypass BG Subtraction) dengan tombol 'N'
+            elif key in (ord("n"), ord("N")):
+                hand_tracker.clear_background()
+                game_engine.audio.play_sfx("bonk")
+
             # Toggle Jendela PiP Diagnostik Fitur Bentuk PCV dengan tombol 'V' atau 'P'
             elif key in (ord("v"), ord("V"), ord("p"), ord("P")):
                 show_pip_diagnostic = not show_pip_diagnostic

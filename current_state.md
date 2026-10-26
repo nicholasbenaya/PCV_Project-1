@@ -30,10 +30,11 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 
 ## 2. Rincian Teknis Whack-A-Mole (Tipe 3) Pasca Upgrade 4 Pilar PCD
 
-### A. Pilar 1: Background Subtraction Berbasis Referensi (Tombol `[B]`)
+### A. Pilar 1: Background Subtraction Multi-Channel & Invalidation (Tombol `[B]` & `[N]`)
 - Pemain merekam frame referensi latar belakang saat duduk di depan webcam dengan menekan tombol `[B]`.
-- Sistem menghitung selisih absolut `cv2.absdiff(gray_frame, bg_gray) > 25` untuk menghasilkan masker foreground gerakan.
-- Operasi `cv2.bitwise_and(color_mask, fg_mask)` otomatis mengeliminasi dinding kamar, meja kayu, dan torso pemain yang diam.
+- Menggunakan selisih multi-channel BGR + Chroma YCrCb (kebal metamerisme grayscale) dengan threshold adaptif $T_{\text{bg}} = 18$.
+- Menerapkan **Static Background Artifact Invalidation**: Hanya area yang *sudah ada dan sewarna kulit di background* (wajah/meja kayu yang diam) yang dieliminasi, sehingga tangan yang diangkat di depan dinding/baju tidak akan pernah ikut tersubtrak/hilang.
+- Tombol **`[N]`** disediakan untuk mereset / me-bypass background subtraction secara instan.
 
 ### B. Pilar 2: Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)
 - Tanpa model learning / XML classifier, sistem membedakan wajah dari tangan menggunakan analisis lubang internal kontur.

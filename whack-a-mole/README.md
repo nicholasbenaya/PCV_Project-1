@@ -63,13 +63,13 @@ flowchart TD
     LockOn --> PoseClassify
 ```
 
-### 3.1. Pilar 1: Background Subtraction Berbasis Referensi (Tombol `[B]`)
+### 3.1. Pilar 1: Background Subtraction Multi-Channel & Invalidation (Tombol `[B]` & `[N]`)
 Pemain merekam kondisi latar belakang saat duduk santai di depan webcam dengan menekan tombol `[B]`:
-$$\mathbf{I}_{\text{diff}}(x, y) = |\mathbf{I}_{\text{gray}}(x, y) - \mathbf{I}_{\text{bg}}(x, y)|$$
-$$\mathbf{M}_{\text{fg}}(x, y) = \begin{cases} 255 & \text{jika } \mathbf{I}_{\text{diff}}(x, y) \ge T_{\text{bg}} \\ 0 & \text{lainnya} \end{cases}$$
-Masker akhir diperoleh melalui operasi per-elemen:
-$$\mathbf{M}_{\text{active}} = \mathbf{M}_{\text{color}} \land \mathbf{M}_{\text{fg}}$$
-Meja kayu, dinding kamar, dan bagian tubuh yang diam otomatis tereliminasi dari masker.
+$$\mathbf{I}_{\text{diff}}(x, y) = \max \left( \max_{c \in \{B, G, R\}} |\mathbf{I}_c - \mathbf{I}_{c,\text{bg}}|, |\mathbf{I}_{Cr} - \mathbf{I}_{Cr,\text{bg}}|, |\mathbf{I}_{Cb} - \mathbf{I}_{Cb,\text{bg}}| \right)$$
+Untuk mencegah tangan ikut tereliminasi (*false subtraction*) akibat metamerisme intensitas grayscale antara kulit dan dinding/baju, sistem menerapkan **Static Background Artifact Invalidation**:
+$$\mathbf{M}_{\text{static\_artifacts}} = \mathbf{M}_{\text{color\_bg}} \land (\mathbf{I}_{\text{diff}} < T_{\text{bg}})$$
+$$\mathbf{M}_{\text{active}} = \mathbf{M}_{\text{color}} \land \neg \operatorname{dilate}(\mathbf{M}_{\text{static\_artifacts}})$$
+Hanya objek yang *sudah ada dan sewarna kulit di background* (wajah yang diam, leher, meja kayu) yang dieliminasi. Tangan yang baru diangkat di depan dinding/baju dijamin 100% utuh! Pemain juga dapat menekan tombol **`[N]`** kapan saja untuk mereset/bypass background subtraction.
 
 ### 3.2. Pilar 2: Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)
 Tanpa menggunakan Haar Cascade atau model deep learning apa pun, sistem membedakan wajah dari tangan menggunakan topologi lubang internal pada masker citra:

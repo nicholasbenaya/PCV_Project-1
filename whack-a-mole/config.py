@@ -34,7 +34,7 @@ LOWER_OBJECT_HSV = np.array([95, 120, 80], dtype=np.uint8)
 UPPER_OBJECT_HSV = np.array([130, 255, 255], dtype=np.uint8)
 
 # Parameter Background Subtraction Berbasis Referensi (Tombol 'B')
-BG_DIFF_THRESHOLD = 25  # Ambang batas selisih piksel absolut (cv2.absdiff)
+BG_DIFF_THRESHOLD = 18  # Ambang batas selisih piksel multi-channel (cv2.absdiff)
 
 # Parameter Eliminasi Wajah via Topologi Hierarki Kontur (cv2.RETR_CCOMP)
 FACE_MIN_INTERNAL_HOLES = 3  # Ambang batas lubang internal mata/mulut
