@@ -79,8 +79,9 @@ class HandSealDetector:
             try:
                 defects = cv2.convexityDefects(contour, hull_indices)
                 if defects is not None:
+                    defects = defects.reshape(-1, 4)
                     for i in range(defects.shape[0]):
-                        _, _, _, d = defects[i, 0]
+                        s, e, f, d = defects[i]
                         if (d / 256.0) > 18.0:
                             defect_count += 1
             except cv2.error:
@@ -90,8 +91,9 @@ class HandSealDetector:
         top_y_limit = y + int(h * 0.15)
         top_pts = contour[contour[:, :, 1] <= top_y_limit]
         if len(top_pts) > 0:
-            top_min_x = np.min(top_pts[:, 0, 0])
-            top_max_x = np.max(top_pts[:, 0, 0])
+            top_pts_2d = top_pts.reshape(-1, 2)
+            top_min_x = np.min(top_pts_2d[:, 0])
+            top_max_x = np.max(top_pts_2d[:, 0])
             top_ratio = (top_max_x - top_min_x) / max(1, w)
         else:
             top_ratio = 1.0

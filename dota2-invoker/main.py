@@ -25,6 +25,8 @@ def main():
     cv2.resizeWindow(window_name, 1280, 720)
 
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     if not cap.isOpened():
         print("[ERROR] Kamera tidak dapat diakses! Pastikan webcam terhubung.")
         return
@@ -60,6 +62,8 @@ def main():
 
         # Cermin horizontal agar gerakan tangan intuitif
         frame = cv2.flip(frame, 1)
+        # Standarisasi resolusi ke 1280x720 untuk rendering HUD & UI proporsional
+        frame = cv2.resize(frame, (1280, 720))
         h, w = frame.shape[:2]
 
         # Hitung FPS

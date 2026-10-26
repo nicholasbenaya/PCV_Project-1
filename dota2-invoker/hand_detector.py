@@ -55,14 +55,23 @@ class HandSealDetector:
         cr_mean, cr_std = mean_y[1][0], std_y[1][0]
         cb_mean, cb_std = mean_y[2][0], std_y[2][0]
 
-        cr_tol = max(18, int(cr_std * 2.5))
-        cb_tol = max(18, int(cb_std * 2.5))
+        cr_tol = max(20, int(cr_std * 2.8))
+        cb_tol = max(20, int(cb_std * 2.8))
 
         self.ycrcb_lower = np.array([0, max(0, int(cr_mean - cr_tol)), max(0, int(cb_mean - cb_tol))], dtype=np.uint8)
         self.ycrcb_upper = np.array([255, min(255, int(cr_mean + cr_tol)), min(255, int(cb_mean + cb_tol))], dtype=np.uint8)
 
+        # HSV mean & std
+        mean_hsv, std_hsv = cv2.meanStdDev(hsv_roi)
+        h_mean, h_std = mean_hsv[0][0], std_hsv[0][0]
+        s_mean, s_std = mean_hsv[1][0], std_hsv[1][0]
+        h_tol = max(15, int(h_std * 2.5))
+        s_tol = max(35, int(s_std * 2.5))
+        self.hsv_lower = np.array([max(0, int(h_mean - h_tol)), max(20, int(s_mean - s_tol)), 30], dtype=np.uint8)
+        self.hsv_upper = np.array([min(180, int(h_mean + h_tol)), min(255, int(s_mean + s_tol)), 255], dtype=np.uint8)
+
         self.is_calibrated = True
-        print(f"[PCV Calibration] YCrCb Range diperbarui: Cr({self.ycrcb_lower[1]}-{self.ycrcb_upper[1]}), Cb({self.ycrcb_lower[2]}-{self.ycrcb_upper[2]})")
+        print(f"[PCV Calibration] YCrCb: Cr({self.ycrcb_lower[1]}-{self.ycrcb_upper[1]}), Cb({self.ycrcb_lower[2]}-{self.ycrcb_upper[2]}), HSV: H({self.hsv_lower[0]}-{self.hsv_upper[0]})")
 
     def get_skin_mask(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Segmentasi warna kulit multi-model warna (YCrCb & HSV) + Morfologi Citra."""
@@ -119,8 +128,9 @@ class HandSealDetector:
             try:
                 defects = cv2.convexityDefects(contour, hull_indices)
                 if defects is not None:
+                    defects = defects.reshape(-1, 4)
                     for i in range(defects.shape[0]):
-                        s, e, f, d = defects[i, 0]
+                        s, e, f, d = defects[i]
                         depth = d / 256.0  # Konversi ke piksel
                         if depth > 18.0:
                             defect_count += 1
@@ -132,8 +142,9 @@ class HandSealDetector:
         top_y_limit = y + int(h * 0.15)
         top_pts = contour[contour[:, :, 1] <= top_y_limit]
         if len(top_pts) > 0:
-            top_min_x = np.min(top_pts[:, 0, 0])
-            top_max_x = np.max(top_pts[:, 0, 0])
+            top_pts_2d = top_pts.reshape(-1, 2)
+            top_min_x = np.min(top_pts_2d[:, 0])
+            top_max_x = np.max(top_pts_2d[:, 0])
             top_width = top_max_x - top_min_x
             top_ratio = top_width / max(1, w)
         else:
