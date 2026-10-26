@@ -2,7 +2,7 @@
 
 from enum import Enum
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import numpy as np
 
 try:
@@ -14,6 +14,7 @@ try:
         HIT_EFFECT_DURATION,
         MOLE_MAX_LIFESPAN,
         MOLE_MIN_LIFESPAN,
+        ZONE_PRESETS,
     )
     from .entities import HitEffect, Hole, Mole, ScoreManager
     from .hand_tracker import HandTrackingResult
@@ -27,6 +28,7 @@ except ImportError:
         HIT_EFFECT_DURATION,
         MOLE_MAX_LIFESPAN,
         MOLE_MIN_LIFESPAN,
+        ZONE_PRESETS,
     )
     from entities import HitEffect, Hole, Mole, ScoreManager
     from hand_tracker import HandTrackingResult
@@ -42,7 +44,7 @@ class GameState(Enum):
 
 
 class GameEngine:
-    """Mesin utama pengontrol alur permainan Whack-A-Mole."""
+    """Mesin utama pengontrol alur permainan Whack-A-Mole dengan sistem Dual-Section."""
 
     def __init__(
         self,
@@ -58,18 +60,33 @@ class GameEngine:
         self.score_manager = ScoreManager()
         self.renderer = UIRenderer()
 
-        self.holes: List[Hole] = self._generate_holes(frame_width, frame_height)
+        # Konfigurasi section aktif
+        self.zone_idx = 0
+        self.active_zone = ZONE_PRESETS[self.zone_idx]
+
+        self.holes: List[Hole] = self._generate_holes(self.active_zone["play_rect"])
         self.mole: Optional[Mole] = None
         self.hit_effect: Optional[HitEffect] = None
 
         self.game_start_time: float = 0.0
         self.last_hit_time: float = 0.0
 
-    def _generate_holes(self, width: int, height: int) -> List[Hole]:
-        """Menghasilkan 6 lubang target pada grid 2 baris x 3 kolom."""
-        xs = [int(width * 0.22), int(width * 0.50), int(width * 0.78)]
-        ys = [int(height * 0.42), int(height * 0.76)]
-        radius = int(min(width, height) * 0.11)
+    def _generate_holes(self, play_rect: Tuple[int, int, int, int]) -> List[Hole]:
+        """Menghasilkan 6 lubang target pada grid 2 baris x 3 kolom di dalam Playing Section."""
+        px1, py1, px2, py2 = play_rect
+        pw = px2 - px1
+        ph = py2 - py1
+
+        xs = [
+            px1 + int(pw * 0.20),
+            px1 + int(pw * 0.50),
+            px1 + int(pw * 0.80),
+        ]
+        ys = [
+            py1 + int(ph * 0.40),
+            py1 + int(ph * 0.74),
+        ]
+        radius = int(min(pw, ph) * 0.12)
 
         holes: List[Hole] = []
         idx = 0
@@ -79,12 +96,18 @@ class GameEngine:
                 idx += 1
         return holes
 
+    def switch_zone(self) -> None:
+        """Mengganti sisi tata letak Playing Section (Kanan / Kiri / Bawah)."""
+        self.zone_idx = (self.zone_idx + 1) % len(ZONE_PRESETS)
+        self.active_zone = ZONE_PRESETS[self.zone_idx]
+        self.holes = self._generate_holes(self.active_zone["play_rect"])
+
     def update_frame_dimensions(self, width: int, height: int) -> None:
-        """Memperbarui grid lubang bila resolusi frame webcam berubah."""
+        """Memperbarui grid bila dimensi kanvas berubah."""
         if width != self.frame_width or height != self.frame_height:
             self.frame_width = width
             self.frame_height = height
-            self.holes = self._generate_holes(width, height)
+            self.holes = self._generate_holes(self.active_zone["play_rect"])
 
     def start_game(self, current_time: float) -> None:
         """Memulai sesi permainan baru."""
@@ -162,22 +185,30 @@ class GameEngine:
         show_mask_pip: bool = False,
     ) -> None:
         """Merender seluruh tampilan antarmuka game pada frame aktif."""
+        # 1. Gambar pembagian visual section (Safe Zone & Playing Section)
+        self.renderer.draw_sections_overlay(frame, self.active_zone)
+
+        # 2. Render elemen game
         if self.state == GameState.START:
             self.renderer.draw_holes_and_mole(frame, self.holes, None, None, current_time)
             self.renderer.draw_hud(
-                frame, self.score_manager, self.game_duration, hand_result.is_detected
+                frame,
+                self.score_manager,
+                self.game_duration,
+                hand_result.is_detected,
+                self.active_zone["play_rect"],
             )
             self.renderer.draw_hand_cursor(frame, hand_result.centroid)
             self.renderer.draw_overlay_panel(
                 frame,
-                "WHACK-A-MOLE VIRTUAL",
+                "WHACK-A-MOLE VIRTUAL (HD DUAL-SECTION)",
                 [
-                    "Arahkan telapak tangan ke mole yang muncul di layar.",
-                    "Pukul tepat di atas mole untuk mengumpulkan skor.",
+                    "Sisi Kiri adalah Safe Zone: Kepala & tubuh Anda terblokir 100%.",
+                    "Arahkan telapak tangan Anda ke Playing Section di sisi kanan.",
                     f"Satu sesi berlangsung selama {int(self.game_duration)} detik.",
-                    "[M] Toggle Mask Segmentasi | [Q] Keluar",
+                    "[H] Ganti Sisi Tangan (Kanan/Kiri/Bawah) | [M] Toggle Mask | [Q] Keluar",
                 ],
-                "Tekan [SPASI] untuk Mulai",
+                "Tekan [SPASI] untuk Mulai Bermain",
             )
 
         elif self.state == GameState.PLAYING:
@@ -188,13 +219,23 @@ class GameEngine:
                 frame, self.holes, self.mole, self.hit_effect, current_time
             )
             self.renderer.draw_hud(
-                frame, self.score_manager, time_left, hand_result.is_detected
+                frame,
+                self.score_manager,
+                time_left,
+                hand_result.is_detected,
+                self.active_zone["play_rect"],
             )
             self.renderer.draw_hand_cursor(frame, hand_result.centroid)
 
         elif self.state == GameState.GAMEOVER:
             self.renderer.draw_holes_and_mole(frame, self.holes, None, None, current_time)
-            self.renderer.draw_hud(frame, self.score_manager, 0.0, hand_result.is_detected)
+            self.renderer.draw_hud(
+                frame,
+                self.score_manager,
+                0.0,
+                hand_result.is_detected,
+                self.active_zone["play_rect"],
+            )
             self.renderer.draw_hand_cursor(frame, hand_result.centroid)
             self.renderer.draw_overlay_panel(
                 frame,
@@ -202,7 +243,7 @@ class GameEngine:
                 [
                     f"Skor Akhir Anda: {self.score_manager.score}",
                     f"Rekor Tertinggi: {self.score_manager.high_score}",
-                    f"Total Mole Terpukul: {self.score_manager.hits_count}",
+                    "Tangan Anda terdeteksi dengan sangat akurat tanpa gangguan wajah!",
                     "[Q] Keluar dari Permainan",
                 ],
                 "Tekan [R] untuk Main Lagi",

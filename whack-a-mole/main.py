@@ -1,4 +1,4 @@
-"""Entry point aplikasi game Whack-A-Mole Virtual berbasis OpenCV murni."""
+"""Entry point aplikasi game Whack-A-Mole Virtual berbasis OpenCV murni (HD 1280x720)."""
 
 import argparse
 import os
@@ -34,7 +34,7 @@ except ImportError:
 def parse_arguments() -> argparse.Namespace:
     """Menguraikan argumen baris perintah saat menjalankan program."""
     parser = argparse.ArgumentParser(
-        description="Game Whack-A-Mole Virtual berbasis OpenCV murni."
+        description="Game Whack-A-Mole Virtual berbasis OpenCV murni dengan sistem Dual-Section."
     )
     parser.add_argument(
         "--camera",
@@ -91,20 +91,24 @@ def run_game() -> None:
 
     try:
         while True:
-            ret, frame = cap.read()
+            ret, raw_frame = cap.read()
             if not ret:
                 print("Peringatan: Gagal membaca frame dari webcam.", file=sys.stderr)
                 break
 
             # Flip horizontal agar cermin natural bagi koordinasi tangan pemain
-            frame = cv2.flip(frame, 1)
-            h, w = frame.shape[:2]
-            game_engine.update_frame_dimensions(w, h)
+            flipped = cv2.flip(raw_frame, 1)
+
+            # Resize otomatis ke resolusi HD kanvas 1280x720
+            frame = cv2.resize(flipped, (args.width, args.height))
 
             current_time = time.time()
 
-            # Segmentasi warna kulit dan kalkulasi centroid tangan
-            hand_result = hand_tracker.process_frame(frame)
+            # Deteksi tangan HANYA di dalam Playing Section (Wajah di Non-playing section dinolkan 100%)
+            hand_result = hand_tracker.process_frame(
+                frame,
+                play_rect=game_engine.active_zone["play_rect"],
+            )
 
             # Update logika game dan deteksi tabrakan
             game_engine.update(hand_result, current_time)
@@ -122,6 +126,9 @@ def run_game() -> None:
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q"), ord("Q")):
                 break
+            elif key in (ord("h"), ord("H"), 9):  # 'H' atau TAB untuk menukar sisi Playing Section
+                game_engine.switch_zone()
+                hand_tracker.reset()
             elif key == ord(" "):
                 if game_engine.state == GameState.START:
                     game_engine.start_game(current_time)

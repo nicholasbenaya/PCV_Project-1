@@ -1,6 +1,6 @@
-"""Modul rendering grafis antarmuka (UI) dan elemen visual game berbasis OpenCV."""
+"""Modul rendering grafis antarmuka (UI) dan elemen visual game berbasis OpenCV (HD 1280x720)."""
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
@@ -35,7 +35,7 @@ except ImportError:
 
 
 class UIRenderer:
-    """Pengelola rendering seluruh antarmuka grafis dan elemen visual game."""
+    """Pengelola rendering seluruh antarmuka grafis dan elemen visual game pada resolusi HD."""
 
     @staticmethod
     def draw_text_with_outline(
@@ -70,63 +70,116 @@ class UIRenderer:
             cv2.LINE_AA,
         )
 
+    def draw_sections_overlay(self, frame: np.ndarray, zone_cfg: Dict) -> None:
+        """Merender batas visual Playing Section dan Non-Playing Section (Safe Zone)."""
+        sx1, sy1, sx2, sy2 = zone_cfg["safe_rect"]
+        px1, py1, px2, py2 = zone_cfg["play_rect"]
+
+        # Redupkan Non-Playing Safe Zone (tempat wajah/tubuh berada)
+        safe_region = frame[sy1:sy2, sx1:sx2]
+        dimmed_safe = (safe_region * 0.42).astype(np.uint8)
+        frame[sy1:sy2, sx1:sx2] = dimmed_safe
+
+        # Garis pembatas neon
+        p_start, p_end = zone_cfg["split_line"]
+        cv2.line(frame, p_start, p_end, COLOR_PRIMARY_CYAN, 3, cv2.LINE_AA)
+
+        # Label pada Non-Playing Section
+        self.draw_text_with_outline(
+            frame,
+            "NON-PLAYING SECTION",
+            (sx1 + 25, 45),
+            scale=0.68,
+            color=(180, 190, 210),
+            thickness=2,
+        )
+        self.draw_text_with_outline(
+            frame,
+            "[SAFE ZONE] Wajah & Tubuh Terblokir 100%",
+            (sx1 + 25, 75),
+            scale=0.48,
+            color=(0, 255, 120),
+            thickness=1,
+        )
+        self.draw_text_with_outline(
+            frame,
+            "Kepala Anda berada di sini dengan aman tanpa mengganggu kursor",
+            (sx1 + 25, 102),
+            scale=0.40,
+            color=(160, 160, 160),
+            thickness=1,
+        )
+
+        # Label pada Playing Section
+        self.draw_text_with_outline(
+            frame,
+            "PLAYING SECTION [ZONA TANGAN AKTIF]",
+            (px1 + 25, 45),
+            scale=0.72,
+            color=COLOR_PRIMARY_CYAN,
+            thickness=2,
+        )
+        self.draw_text_with_outline(
+            frame,
+            f"Tata Letak: {zone_cfg['name']}  |  [H] Ganti Sisi",
+            (px1 + 25, 75),
+            scale=0.48,
+            color=(255, 220, 100),
+            thickness=1,
+        )
+
     def draw_hud(
         self,
         frame: np.ndarray,
         score_manager: ScoreManager,
         time_left: float,
         hand_detected: bool,
+        play_rect: Tuple[int, int, int, int],
     ) -> None:
         """Merender bilah HUD atas berisi skor, timer, dan status deteksi tangan."""
-        h, w = frame.shape[:2]
-        hud_h = 75
-
-        # Latar HUD semi-transparan menggunakan alpha blending
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, hud_h), (25, 25, 25), -1)
-        cv2.line(overlay, (0, hud_h), (w, hud_h), (60, 60, 60), 2)
-        cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+        px1, py1, px2, py2 = play_rect
+        pw = px2 - px1
 
         # Informasi skor pemain
         self.draw_text_with_outline(
             frame,
             f"SKOR: {score_manager.score}",
-            (25, 36),
-            scale=0.85,
+            (px1 + 25, 120),
+            scale=0.88,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
         )
         self.draw_text_with_outline(
             frame,
             f"TERTINGGI: {score_manager.high_score}",
-            (25, 62),
-            scale=0.55,
+            (px1 + 25, 146),
+            scale=0.52,
             color=(180, 180, 180),
             thickness=1,
         )
 
-        # Indikator sisa waktu
+        # Indikator sisa waktu di tengah playing section
         time_color = COLOR_TIMER_NORMAL if time_left > 5.0 else COLOR_TIMER_CRITICAL
         time_text = f"WAKTU: {max(0.0, time_left):.1f}s"
-        text_size = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
-        timer_x = (w - text_size[0]) // 2
+        t_size = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.95, 2)[0]
+        timer_x = px1 + (pw - t_size[0]) // 2
         self.draw_text_with_outline(
             frame,
             time_text,
-            (timer_x, 48),
-            scale=0.9,
+            (timer_x, 130),
+            scale=0.95,
             color=time_color,
             thickness=2,
         )
 
         # Indikator status sensor tangan
         hand_color = (0, 240, 100) if hand_detected else (0, 80, 240)
-        hand_text = "TANGAN: AKTIF" if hand_detected else "TANGAN: TIDAK TERDETEKSI"
-        cv2.circle(frame, (w - 230, 42), 7, hand_color, -1, cv2.LINE_AA)
+        hand_text = "TANGAN: AKTIF" if hand_detected else "TANGAN: MENUNGGU"
+        cv2.circle(frame, (px2 - 200, 124), 7, hand_color, -1, cv2.LINE_AA)
         self.draw_text_with_outline(
             frame,
             hand_text,
-            (w - 215, 48),
+            (px2 - 185, 130),
             scale=0.52,
             color=hand_color,
             thickness=1,
@@ -144,7 +197,6 @@ class UIRenderer:
         for hole in holes:
             hx, hy, r = hole.x, hole.y, hole.radius
 
-            # Lubang dasar dengan efek kedalaman
             cv2.circle(frame, (hx, hy), r, COLOR_HOLE_INNER, -1, cv2.LINE_AA)
             cv2.circle(frame, (hx, hy), r, COLOR_HOLE_OUTER, 3, cv2.LINE_AA)
             cv2.ellipse(
@@ -159,24 +211,20 @@ class UIRenderer:
                 cv2.LINE_AA,
             )
 
-            # Gambar mole bila berada di lubang ini
             if mole is not None and hole.index == mole.current_hole_idx:
                 ratio = mole.get_time_ratio(current_time)
                 mole_r = int(r * 0.75)
 
-                # Badan mole
                 cv2.circle(frame, (hx, hy), mole_r, COLOR_MOLE_BODY, -1, cv2.LINE_AA)
                 cv2.circle(frame, (hx, hy), mole_r, COLOR_PRIMARY_CYAN, 3, cv2.LINE_AA)
 
-                # Wajah mole (mata)
                 eye_offset_x = int(mole_r * 0.35)
                 eye_y = hy - int(mole_r * 0.20)
-                cv2.circle(frame, (hx - eye_offset_x, eye_y), 5, (20, 20, 20), -1, cv2.LINE_AA)
-                cv2.circle(frame, (hx + eye_offset_x, eye_y), 5, (20, 20, 20), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx - eye_offset_x, eye_y), 6, (20, 20, 20), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx + eye_offset_x, eye_y), 6, (20, 20, 20), -1, cv2.LINE_AA)
                 cv2.circle(frame, (hx - eye_offset_x + 1, eye_y - 1), 2, (255, 255, 255), -1, cv2.LINE_AA)
                 cv2.circle(frame, (hx + eye_offset_x + 1, eye_y - 1), 2, (255, 255, 255), -1, cv2.LINE_AA)
 
-                # Moncong dan hidung
                 cv2.ellipse(
                     frame,
                     (hx, hy + int(mole_r * 0.15)),
@@ -188,15 +236,14 @@ class UIRenderer:
                     -1,
                     cv2.LINE_AA,
                 )
-                cv2.circle(frame, (hx, hy + int(mole_r * 0.08)), 4, (30, 30, 30), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx, hy + int(mole_r * 0.08)), 5, (30, 30, 30), -1, cv2.LINE_AA)
 
-                # Indikator busur lingkaran waktu tersisa
                 angle_end = int(360 * ratio)
                 if angle_end > 0:
                     cv2.ellipse(
                         frame,
                         (hx, hy),
-                        (r + 6, r + 6),
+                        (r + 7, r + 7),
                         -90,
                         0,
                         angle_end,
@@ -205,7 +252,6 @@ class UIRenderer:
                         cv2.LINE_AA,
                     )
 
-        # Animasi feedback visual pukulan
         if hit_effect is not None and hit_effect.is_alive(current_time):
             progress = hit_effect.get_progress(current_time)
             pulse_radius = int(holes[0].radius * (0.8 + progress * 1.5))
@@ -216,7 +262,7 @@ class UIRenderer:
                 frame,
                 "+1 HIT!",
                 (hit_effect.position[0] - 50, float_y),
-                scale=0.9,
+                scale=1.0,
                 color=COLOR_HIT_FLASH,
                 thickness=2,
             )
@@ -227,14 +273,14 @@ class UIRenderer:
             return
 
         cx, cy = centroid
-        cv2.circle(frame, (cx, cy), 18, COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.circle(frame, (cx, cy), 5, (0, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(frame, (cx, cy), 22, COLOR_RETICLE, 2, cv2.LINE_AA)
+        cv2.circle(frame, (cx, cy), 6, (0, 255, 255), -1, cv2.LINE_AA)
 
-        arm = 12
-        cv2.line(frame, (cx - 18 - arm, cy), (cx - 18, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx + 18, cy), (cx + 18 + arm, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx, cy - 18 - arm), (cx, cy - 18), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx, cy + 18), (cx, cy + 18 + arm), COLOR_RETICLE, 2, cv2.LINE_AA)
+        arm = 14
+        cv2.line(frame, (cx - 22 - arm, cy), (cx - 22, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
+        cv2.line(frame, (cx + 22, cy), (cx + 22 + arm, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
+        cv2.line(frame, (cx, cy - 22 - arm), (cx, cy - 22), COLOR_RETICLE, 2, cv2.LINE_AA)
+        cv2.line(frame, (cx, cy + 22), (cx, cy + 22 + arm), COLOR_RETICLE, 2, cv2.LINE_AA)
 
     def draw_overlay_panel(
         self,
@@ -250,7 +296,7 @@ class UIRenderer:
         cv2.rectangle(overlay, (0, 0), (w, h), (15, 15, 15), -1)
         cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
 
-        box_w, box_h = int(w * 0.72), int(h * 0.65)
+        box_w, box_h = int(w * 0.65), int(h * 0.60)
         bx1 = (w - box_w) // 2
         by1 = (h - box_h) // 2
         bx2, by2 = bx1 + box_w, by1 + box_h
@@ -258,42 +304,39 @@ class UIRenderer:
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (30, 30, 30), -1)
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), COLOR_PRIMARY_CYAN, 2)
 
-        # Header judul panel
-        t_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 3)[0]
+        t_size = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 1.1, 3)[0]
         tx = (w - t_size[0]) // 2
         self.draw_text_with_outline(
             frame,
             title,
-            (tx, by1 + 55),
-            scale=1.0,
+            (tx, by1 + 60),
+            scale=1.1,
             color=COLOR_PRIMARY_CYAN,
             thickness=3,
         )
-        cv2.line(frame, (bx1 + 30, by1 + 75), (bx2 - 30, by1 + 75), (70, 70, 70), 1)
+        cv2.line(frame, (bx1 + 30, by1 + 80), (bx2 - 30, by1 + 80), (70, 70, 70), 1)
 
-        # Isi baris teks informasi
-        curr_y = by1 + 120
+        curr_y = by1 + 130
         for line in subtitle_lines:
-            l_size = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.62, 1)[0]
+            l_size = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 1)[0]
             lx = (w - l_size[0]) // 2
             self.draw_text_with_outline(
                 frame,
                 line,
                 (lx, curr_y),
-                scale=0.62,
+                scale=0.65,
                 color=(220, 220, 220),
                 thickness=1,
             )
-            curr_y += 38
+            curr_y += 42
 
-        # Tombol aksi di bagian bawah panel
-        p_size = cv2.getTextSize(button_prompt, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)[0]
+        p_size = cv2.getTextSize(button_prompt, cv2.FONT_HERSHEY_SIMPLEX, 0.85, 2)[0]
         px = (w - p_size[0]) // 2
         self.draw_text_with_outline(
             frame,
             button_prompt,
-            (px, by2 - 35),
-            scale=0.75,
+            (px, by2 - 40),
+            scale=0.85,
             color=COLOR_HIT_FLASH,
             thickness=2,
         )
@@ -301,8 +344,8 @@ class UIRenderer:
     def draw_mask_pip(self, frame: np.ndarray, mask: np.ndarray) -> None:
         """Menampilkan jendela kecil Picture-in-Picture untuk memonitor mask segmentasi."""
         h, w = frame.shape[:2]
-        pip_w, pip_h = 160, 120
-        pip_x, pip_y = w - pip_w - 15, h - pip_h - 15
+        pip_w, pip_h = 200, 150
+        pip_x, pip_y = w - pip_w - 20, h - pip_h - 20
 
         mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
         small_mask = cv2.resize(mask_bgr, (pip_w, pip_h))
@@ -318,8 +361,8 @@ class UIRenderer:
 
         self.draw_text_with_outline(
             frame,
-            "Mask Kulit",
-            (pip_x + 5, pip_y + 18),
+            "Mask Kulit (Playing Only)",
+            (pip_x + 5, pip_y + 20),
             scale=0.45,
             color=(0, 255, 255),
             thickness=1,
