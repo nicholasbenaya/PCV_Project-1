@@ -140,21 +140,24 @@ class HandSealDetector:
         palm_center = (x + max_loc[0], y + max_loc[1])
         palm_radius = float(max_val)
 
-        # 2. Deteksi Ujung Jari Nyata (Fingertips) Berdasarkan Jarak ke Pusat Telapak (NMS Peak Selection)
+        # 2. Deteksi Ujung Jari Nyata (Fingertips) Berdasarkan Jarak Rasio & NMS
+        # Rasio jari manusia sejati: Ujung jari mencuat > 2.05 * Palm Radius (Knuckle/sudut telapak hanya 1.3 - 1.95x)
+        # Filter Pergelangan Tangan: Pergelangan tangan berada tepat di bawah telapak tangan (|dx| < 1.35 * R dan dy > 0.2 * R).
+        # Jempol yang membuka ke samping (|dx| >= 1.35 * R) BUKAN pergelangan tangan dan harus diterima.
         candidates = []
         if palm_radius > 15:
             for pt in hull[:, 0]:
                 dist = np.hypot(pt[0] - palm_center[0], pt[1] - palm_center[1])
-                # Ujung jari harus berada di luar lingkaran telapak tangan (> 1.28 * radius)
-                # dan tidak berada di bawah pangkal telapak tangan / pergelangan tangan (y < palm_y + 0.35 * R)
-                if dist > (1.28 * palm_radius) and pt[1] < (palm_center[1] + int(palm_radius * 0.35)):
+                ratio = dist / palm_radius
+                is_wrist = (pt[1] > (palm_center[1] + int(palm_radius * 0.20))) and (abs(pt[0] - palm_center[0]) < int(palm_radius * 1.35))
+                if not is_wrist and ratio > 2.05:
                     candidates.append((pt, dist))
 
         # Urutkan kandidat dari jarak terjauh ke terdekat (puncak tertinggi jari diproses duluan)
         candidates.sort(key=lambda item: item[1], reverse=True)
 
-        # Non-Maximum Suppression (NMS): Hanya simpan titik yang terpisah cukup jauh antar-jari
-        min_tip_dist = max(38.0, palm_radius * 0.52)
+        # Non-Maximum Suppression (NMS): Saring titik ganda pada jari yang sama (jarak pisah minimal 54 px)
+        min_tip_dist = max(54.0, palm_radius * 0.90)
         finger_tips = []
         for pt, dist in candidates:
             if not any(np.hypot(pt[0] - p[0], pt[1] - p[1]) < min_tip_dist for p in finger_tips):
@@ -230,15 +233,16 @@ class HandSealDetector:
             return "NONE", 0.0, {}
 
         confidence = 0.95
-        if tip_count >= 5 or (tip_count == 4 and defect_count >= 4):
-            detected_seal = "5_FINGERS"   # 5 Jari -> Quick Cast Slot 1 (D)
-        elif tip_count == 4 and defect_count >= 2:
-            detected_seal = "4_FINGERS"   # 4 Jari -> Invoke (R)
-        elif tip_count == 3 and defect_count >= 1:
+        # 5 Jari: 5 ujung jari terdeteksi, ATAU 4 jari dengan telapak tangan lebar dan celah jari >= 3
+        if tip_count >= 5 or (tip_count == 4 and aspect_ratio <= 1.34 and defect_count >= 3):
+            detected_seal = "5_FINGERS"   # 5 Jari (Telapak Terbuka) -> Quick Cast Slot 1 (D)
+        elif tip_count == 4:
+            detected_seal = "4_FINGERS"   # 4 Jari (Jempol Tertekuk, Ramping) -> Invoke (R)
+        elif tip_count == 3:
             detected_seal = "3_FINGERS"   # 3 Jari -> Exort (E)
         elif tip_count == 2 and (defect_count >= 1 or solidity < 0.82):
             detected_seal = "2_FINGERS"   # 2 Jari -> Wex (W)
-        elif tip_count == 1 and top_ratio <= 0.42:
+        elif tip_count == 1 and top_ratio <= 0.44:
             detected_seal = "1_FINGER"    # 1 Jari -> Quas (Q)
         elif tip_count == 0 and solidity >= 0.70 and area <= 28000 and aspect_ratio < 1.40:
             detected_seal = "FIST"        # 0 Jari (Kepal) -> Quick Cast Slot 2 (F)

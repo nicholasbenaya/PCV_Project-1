@@ -71,7 +71,7 @@ def main():
     use_hand_zone = True
 
     zone_presets = [
-        ("TANGAN KANAN (WAJAH DIKECUALIKAN)", (480, 50, 1240, 670)),
+        ("TANGAN KANAN (WAJAH DIKECUALIKAN)", (390, 50, 1240, 670)),
         ("TANGAN KIRI (WAJAH DIKECUALIKAN)", (40, 50, 800, 670)),
         ("TENGAH / BEBAS", (260, 50, 1020, 670))
     ]
