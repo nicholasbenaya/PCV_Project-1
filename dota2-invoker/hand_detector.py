@@ -271,13 +271,14 @@ class HandSealDetector:
         if contours:
             largest_contour = max(contours, key=cv2.contourArea)
             seal_name, confidence, feats = self.classify_seal(largest_contour, mask, frame_bgr.shape[:2])
-            hull = cv2.convexHull(largest_contour)
 
-            info["seal"] = seal_name
-            info["contour"] = largest_contour
-            info["hull"] = hull
-            info["features"] = feats
-            info["confidence"] = confidence
+            if seal_name != "NONE":
+                hull = cv2.convexHull(largest_contour)
+                info["seal"] = seal_name
+                info["contour"] = largest_contour
+                info["hull"] = hull
+                info["features"] = feats
+                info["confidence"] = confidence
 
             # Logika Pemicuan & Debouncing
             if seal_name not in ["NONE", "UNKNOWN"]:

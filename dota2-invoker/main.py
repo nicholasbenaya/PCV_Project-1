@@ -1,35 +1,64 @@
 """
-Main Runner: Dota 2 Invoker Naruto Hand Seals Detector
+Main Runner: Dota 2 Invoker Hand Pose Controller (Pure OpenCV)
 Praktikum Pengolahan Citra dan Visi Komputer (PCV) - Project 1
 Window: "Tugas Game - Dota 2 Invoker"
 
 Navigasi Kontrol Keyboard:
 - 'C': Mode Kalibrasi Warna Kulit (Letakkan tangan di kotak tengah, lalu tekan 'C')
+- 'Z': Toggle Hand Zone ROI (Area aman tangan, memblokir gorden dan rambut)
 - 'I': Toggle DirectInput Hardware Key Injection (LIVE / SIMULATION)
 - 'M': Toggle Tampilan Masker Biner Hasil Morfologi (PiP)
-- 'R': Reset Orb Invoker ke Default (EEE)
-- 'Q' atau 'ESC': Keluar dari Aplikasi
+- 'O': Reset Orb Invoker ke Default (EEE) [Huruf O, bukan R]
+- 'K': Reset Kalibrasi ke Default Universal [Huruf K, bukan D]
+- 'ESC' atau 'X': Keluar dari Aplikasi [Bukan Q, agar tidak tabrakan dengan Quas]
 """
 
 import cv2
 import numpy as np
 import time
+import os
+import sys
+import logging
+import traceback
 from hand_detector import HandSealDetector
 from vfx_overlay import VFXOverlay
 from invoker_controller import InvokerController
 
+# Setup Crash Logging
+log_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash.log")
+logging.basicConfig(
+    filename=log_file,
+    filemode="a",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("Dota2Invoker")
+
 
 def main():
+    logger.info("=== APLIKASI DOTA 2 INVOKER DIMULAI ===")
     window_name = "Tugas Game - Dota 2 Invoker"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
 
-    cap = cv2.VideoCapture(0)
+    # Inisialisasi Webcam: Prioritaskan DirectShow (CAP_DSHOW) di Windows untuk kestabilan tinggi & 0 lag
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        logger.warning("DirectShow tidak tersedia, mencoba default backend...")
+        cap = cv2.VideoCapture(0)
+
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 60)
+
     if not cap.isOpened():
-        print("[ERROR] Kamera tidak dapat diakses! Pastikan webcam terhubung.")
+        err_msg = "[ERROR] Kamera tidak dapat diakses! Pastikan webcam terhubung dan tidak dipakai aplikasi lain."
+        print(err_msg)
+        logger.error(err_msg)
         return
+
+    logger.info("Webcam berhasil diinisialisasi pada resolusi 1280x720.")
 
     # Inisialisasi Modul
     detector = HandSealDetector()
@@ -41,10 +70,11 @@ def main():
     calibration_mode = False
     use_hand_zone = True
     hand_zone = (260, 60, 1020, 640)  # Area interaksi tangan (eliminasi gorden & rambut)
-    toast_msg = ""
-    toast_timer = 0.0
+    toast_msg = "HAND ZONE AKTIF [Z: Toggle]"
+    toast_timer = 3.0
     fps_time = time.time()
     fps = 0.0
+    consecutive_drop_count = 0
 
     print("===================================================================")
     print("        DOTA 2 INVOKER HAND POSE CONTROLLER (PURE OPENCV)")
@@ -56,13 +86,21 @@ def main():
     print(" - 5 JARI         -> QUICK CAST D [Mantra Slot 1]")
     print(" - KEPAL (FIST)   -> QUICK CAST F [Mantra Slot 2]")
     print("-------------------------------------------------------------------")
-    print(" Shortcut: [C] Kalibrasi | [I] Toggle DirectInput | [M] Mask PiP | [Q] Keluar")
+    print(" Shortcut: [C] Kalibrasi | [Z] Hand Zone | [I] DirectInput | [ESC] Keluar")
     print("===================================================================\n")
 
     while True:
         ret, frame = cap.read()
-        if not ret:
-            break
+        if not ret or frame is None:
+            consecutive_drop_count += 1
+            if consecutive_drop_count > 45:
+                err_msg = "[ERROR] Kamera terputus (45 frame berturut-turut gagal dibaca)."
+                print(err_msg)
+                logger.error(err_msg)
+                break
+            time.sleep(0.01)
+            continue
+        consecutive_drop_count = 0
 
         # Cermin horizontal agar gerakan tangan intuitif
         frame = cv2.flip(frame, 1)
@@ -230,10 +268,10 @@ def main():
 
         cv2.putText(frame, f"PCV INVOKER | FPS: {fps:.1f}", (15, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.52, (230, 230, 240), 1, cv2.LINE_AA)
-        cv2.putText(frame, "[C] Kalibrasi  [Z] Hand Zone  [I] Input Mode  [M] Mask  [R] Reset Orbs", (220, 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (180, 190, 210), 1, cv2.LINE_AA)
-        cv2.putText(frame, f"INPUT: {input_status} [I]", (w - 230, 26),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.52, status_color, 1, cv2.LINE_AA)
+        cv2.putText(frame, "[C] Kalibrasi  [Z] Hand Zone  [I] DirectInput  [M] Mask  [O] Reset Orbs  [K] Default  [ESC] Keluar", (200, 26),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 190, 210), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"INPUT: {input_status} [I]", (w - 225, 26),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.50, status_color, 1, cv2.LINE_AA)
 
         # Banner Notifikasi Konfirmasi Kalibrasi / Status
         if toast_timer > 0:
@@ -260,8 +298,12 @@ def main():
         cv2.imshow(window_name, frame)
 
         # Event Key Handling
+        # PERINGATAN: JANGAN gunakan Q, W, E, R, D, F untuk kontrol antarmuka di sini!
+        # Karena DirectInput menginjeksi tombol tersebut ke sistem Windows. Jika game window sedang fokus,
+        # cv2.waitKey akan membaca tombol mantra tersebut dan dapat memicu penutupan/reset yang tidak disengaja.
         key = cv2.waitKey(1) & 0xFF
-        if key in [ord('q'), ord('Q'), 27]:
+        if key in [27, ord('x'), ord('X')]:  # Keluar HANYA dengan tombol ESC atau X
+            logger.info("Pengguna menekan ESC/X untuk keluar.")
             break
         elif key in [ord('c'), ord('C')]:
             calibration_mode = True
@@ -270,23 +312,38 @@ def main():
             status_str = "AKTIF (Gorden & Rambut Terblokir)" if use_hand_zone else "NONAKTIF (Full Frame)"
             toast_msg = f"HAND ZONE: {status_str}"
             toast_timer = 2.5
-        elif key in [ord('d'), ord('D')]:
+            logger.info(f"Hand zone diubah: {status_str}")
+        elif key in [ord('k'), ord('K')]:  # K untuk Kalibrasi default (bukan D)
             detector.reset_default_calibration()
             toast_msg = "KALIBRASI DI-RESET KE DEFAULT UNIVERSAL"
             toast_timer = 2.5
+            logger.info("Kalibrasi di-reset ke default universal.")
         elif key in [ord('i'), ord('I')]:
             invoker.input_sender.enabled = not invoker.input_sender.enabled
-            print(f"[PCV Input Mode] DirectInput: {'LIVE' if invoker.input_sender.enabled else 'SIMULATED'}")
+            status_log = 'LIVE DIRECTX' if invoker.input_sender.enabled else 'SIMULATED'
+            print(f"[PCV Input Mode] DirectInput: {status_log}")
+            logger.info(f"Input mode diubah ke: {status_log}")
         elif key in [ord('m'), ord('M')]:
             show_mask_pip = not show_mask_pip
-        elif key in [ord('r'), ord('R')]:
+        elif key in [ord('o'), ord('O')]:  # O untuk Reset Orbs (bukan R)
             invoker.active_orbs = ["E", "E", "E"]
             invoker.last_action_msg = "Orb di-reset ke [E, E, E]"
+            toast_msg = "ORBS DI-RESET KE [E, E, E]"
+            toast_timer = 2.0
+            logger.info("Orb di-reset ke default [E, E, E].")
 
     cap.release()
     cv2.destroyAllWindows()
+    logger.info("Aplikasi ditutup dengan bersih.")
     print("[INFO] Aplikasi Dota 2 Invoker selesai ditutup.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logger.exception("FATAL UNHANDLED CRASH:")
+        print(f"\n[FATAL CRASH] Terjadi error tak terduga pada program: {e}")
+        print(f"[LOG FILE] Riwayat error lengkap telah dicatat di: {log_file}")
+        traceback.print_exc()
+        input("\nTekan Enter untuk keluar...")

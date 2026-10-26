@@ -113,7 +113,13 @@ def main():
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 60)
+
     if not cap.isOpened():
         print("[ERROR] Kamera tidak dapat diakses! Pastikan webcam terhubung.")
         return
@@ -124,18 +130,25 @@ def main():
     calibration_mode = False
     vfx_angle = 0.0
     last_time = time.time()
+    consecutive_drop_count = 0
 
     print("===================================================================")
     print("      SHINOBI JUTSU BATTLE: WIZARD DUEL (PURE OPENCV)")
     print("===================================================================")
     print(" Rapalkan segel tangan di depan webcam untuk menyerang Demon Boss!")
-    print(" Shortcut: [C] Kalibrasi Warna Kulit | [R] Restart Game | [Q] Keluar")
+    print(" Shortcut: [C] Kalibrasi Warna Kulit | [R] Restart Game | [Q/ESC] Keluar")
     print("===================================================================\n")
 
     while True:
         ret, frame = cap.read()
-        if not ret:
-            break
+        if not ret or frame is None:
+            consecutive_drop_count += 1
+            if consecutive_drop_count > 45:
+                print("[ERROR] Kamera terputus setelah 45 frame gagal.")
+                break
+            time.sleep(0.01)
+            continue
+        consecutive_drop_count = 0
 
         frame = cv2.flip(frame, 1)
         now = time.time()
@@ -208,4 +221,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\n[FATAL CRASH] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        input("\nTekan Enter untuk keluar...")

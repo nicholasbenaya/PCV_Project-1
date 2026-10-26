@@ -75,7 +75,7 @@ class DirectInputSender:
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
 
-    def press_key(self, key_name: str, hold_time: float = 0.04):
+    def press_key(self, key_name: str, hold_time: float = 0.02):
         """Kirim penekanan tombol hardware scancode ke Windows."""
         key_name = key_name.upper()
         if not self.enabled:
@@ -88,19 +88,22 @@ class DirectInputSender:
 
         scancode = SCANCODES[key_name]
 
-        # Key Down
-        extra = ctypes.c_ulong(0)
-        ii_ = Input_I()
-        ii_.ki = KeyBdInput(0, scancode, KEYEVENTF_SCANCODE, 0, ctypes.pointer(extra))
-        x = Input(ctypes.c_ulong(INPUT_KEYBOARD), ii_)
-        ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+        try:
+            # Key Down
+            extra = ctypes.c_ulong(0)
+            ii_ = Input_I()
+            ii_.ki = KeyBdInput(0, scancode, KEYEVENTF_SCANCODE, 0, ctypes.pointer(extra))
+            x = Input(ctypes.c_ulong(INPUT_KEYBOARD), ii_)
+            ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
 
-        time.sleep(hold_time)
+            time.sleep(hold_time)
 
-        # Key Up
-        ii_.ki = KeyBdInput(0, scancode, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0, ctypes.pointer(extra))
-        x = Input(ctypes.c_ulong(INPUT_KEYBOARD), ii_)
-        ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+            # Key Up
+            ii_.ki = KeyBdInput(0, scancode, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP, 0, ctypes.pointer(extra))
+            x = Input(ctypes.c_ulong(INPUT_KEYBOARD), ii_)
+            ctypes.windll.user32.SendInput(1, ctypes.pointer(x), ctypes.sizeof(x))
+        except Exception as e:
+            print(f"[DirectInput Error] Gagal mengeksekusi SendInput untuk key '{key_name}': {e}")
 
 
 if __name__ == "__main__":
