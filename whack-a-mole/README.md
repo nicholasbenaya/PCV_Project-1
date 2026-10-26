@@ -11,12 +11,17 @@ Berkas Utama: [`main.py`](main.py) | [`game_engine.py`](game_engine.py) | [`hand
 **Whack-A-Mole Virtual** adalah game arcade interaktif berbasis *Computer Vision* murni (**OpenCV `cv2` & NumPy**) tanpa pustaka *deep learning* (tanpa MediaPipe, YOLO, TensorFlow, atau PyTorch). Pemain mengontrol seluruh navigasi menu dan aksi pemukulan mole secara *hands-free* di depan webcam melalui pelacakan titik berat (*centroid*) telapak tangan.
 
 Proyek ini dilengkapi dengan:
-1. **Main Menu Interaktif**: Navigasi menggunakan keyboard atau **Virtual Touch** (arahkan kursor tangan di atas tombol selama ~0.85 detik).
-2. **Kustomisasi Grid**: Pilihan ukuran grid lubang $2 \times 2$ (4 lubang), $2 \times 3$ (6 lubang), $3 \times 3$ (9 lubang), dan $3 \times 4$ (12 lubang).
-3. **Mode Permainan Ganda**:
-   - **Mode Survival (Endless High Score)**: Intensitas meningkat secara dinamis seiring durasi bertahan (kecepatan mole menyusut hingga $0.55\text{s}$, kemunculan mole ganda, sistem nyawa 3 HP, dan *multiplier combo*).
-   - **Mode Level Progression (Level 1 - 10)**: Sistem perkembangan 10 level bertahap. Untuk membuka level selanjutnya, pemain **wajib menuntaskan level sebelumnya**. Progres tersimpan permanen di `save_data.json`.
-4. **Sintesis Audio Prosedural & BGM Dinamis Adaptif**: Seluruh efek suara (klik tombol, pukulan *bonk*, mole kabur, *level clear fanfare*, *game over*) serta 4 tingkat loop musik latar *chiptune* disintesis secara matematis menggunakan rumus gelombang NumPy tanpa file audio eksternal. Musik in-game beradaptasi semakin intens dan cepat saat intensitas permainan meningkat.
+1. **Resolusi HD Widescreen ($1280 \times 720$)**: Tampilan lega dan responsif untuk kenyamanan visual serta fleksibilitas jangkauan gerak tangan pemain.
+2. **Dual-Section Partition (Anti-Face Hijacking)**: Pembagian layar menjadi dua zona:
+   - **Playing Section**: Area aktif tempat target mole, kursor tangan, dan tombol menu berada.
+   - **Non-Playing Safe Zone**: Area tempat kepala/tubuh pemain berada yang secara fisik dinolkan pada masker biner segmentasi kulit ($M_{\text{isolated}} = 0$). Hal ini memberikan jaminan 100% wajah tidak akan pernah membajak kursor tangan.
+   - **Preset Fleksibel**: Tombol `[H]` atau `[TAB]` untuk berganti orientasi: Tangan Kanan (default), Tangan Kiri (*left-handed*), atau Tangan Bawah.
+3. **Mode Kalibrasi Warna Kulit Interaktif**: Mengambil sampel statistik telapak tangan pemain pada ruang warna YCrCb dan HSV untuk beradaptasi terhadap berbagai rona kulit dan kondisi pencahayaan ruangan secara presisi.
+4. **Main Menu Lengkap & Navigasi Fleksibel**:
+   - Pilihan konfigurasi Grid ($2 \times 2$, $2 \times 3$, $3 \times 3$, $3 \times 4$).
+   - Pilihan Mode Survival (Endless High Score dengan intensitas meningkat) & Mode Level (Level 1 - 10 dengan sistem *unlock*).
+   - Navigasi tombol dapat menggunakan keyboard angka `[1-6]` atau **Virtual Touch** (arahkan kursor tangan di atas tombol selama ~0.85 detik).
+5. **Sintesis Audio Prosedural & BGM Dinamis Adaptif**: Seluruh efek suara (klik tombol, pukulan *bonk*, mole kabur, *level clear fanfare*, *game over*) serta 4 tingkat loop musik latar *chiptune* disintesis secara matematis menggunakan rumus gelombang NumPy tanpa file audio eksternal. Musik in-game beradaptasi semakin cepat dan bersemangat seiring meningkatnya intensitas permainan.
 
 ---
 
@@ -27,14 +32,14 @@ Kode dibangun dengan arsitektur bersih (*Clean Code & Separation of Concerns*):
 ```text
 whack-a-mole/
 │
-├── config.py           # Parameter konstan: batas warna HSV, ukuran frame, definisi 10 level, warna UI
+├── config.py           # Parameter konstan: resolusi HD 1280x720, batas warna HSV/YCrCb, preset zona, 10 level
 ├── audio_system.py     # Generator gelombang audio sintetis (NumPy stereo PCM) & BGM loop adaptif
-├── save_manager.py     # Persistensi data progres: level unlock, rekor survival, dan preferensi grid
-├── hand_tracker.py     # Modul Vision: segmentasi HSV dual-range, morfologi, kontur & centroid EMA
+├── save_manager.py     # Persistensi data progres: level unlock, rekor survival, kalibrasi, preferensi grid
+├── hand_tracker.py     # Modul Vision: isolasi Playing Section, sampling kalibrasi, morfologi & centroid EMA
 ├── entities.py         # Model objek: Hole, Mole (multi-mole), HitEffect, ScoreManager, SurvivalTracker, Button
-├── ui_renderer.py      # Modul visualisasi OpenCV: HUD Survival/Level, Mole kartun, modal dialog, & PiP
-├── game_engine.py      # Mesin utama: State Machine (MENU, LEVEL_SELECT, GRID_SELECT, PLAYING, GAMEOVER)
-├── main.py             # Entry point aplikasi: loop kamera, event hotkey, dan eksekusi
+├── ui_renderer.py      # Modul visualisasi OpenCV: overlay dual-section, HUD, Mole kartun, modal & PiP
+├── game_engine.py      # Mesin utama: State Machine (MENU, LEVEL_SELECT, GRID_SELECT, CALIBRATION, PLAYING, GAMEOVER)
+├── main.py             # Entry point aplikasi: loop kamera, event hotkey, kalibrasi, dan eksekusi
 ├── save_data.json      # File penyimpanan lokal progres pemain (dibuat otomatis)
 └── README.md           # Laporan teknis dan dokumentasi lengkap
 ```
@@ -43,48 +48,50 @@ whack-a-mole/
 
 ## 3. Metodologi Pengolahan Citra Digital (PCD)
 
-### 3.1. Segmentasi Warna Kulit HSV Dual-Range
-Memisahkan krominans dari pencahayaan menggunakan model HSV:
-* **Rentang 1 (Oranye–Kuning & Merah Muda):**
-  $$H \in [0, 22], \quad S \in [35, 190], \quad V \in [60, 255]$$
-* **Rentang 2 (Pembungkus Rona Merah Pekat / Wrap-Around):**
-  $$H \in [170, 180], \quad S \in [35, 190], \quad V \in [60, 255]$$
-* **Penggabungan Masker Biner:**
-  $$M_{\text{raw}} = M_1 \lor M_2$$
+### 3.1. Isolasi Zona Bermain (*Playing Section Masking*)
+Penyebab utama wajah membajak kursor pada segmentasi kulit sederhana adalah luas area wajah/leher yang lebih besar daripada tangan. Sistem ini menerapkan partisi spasial tegas:
+$$\mathbf{M}_{\text{isolated}}(x, y) = \begin{cases} \mathbf{M}_{\text{skin}}(x, y) & \text{jika } (x, y) \in \text{Playing Section} \\ 0 & \text{jika } (x, y) \in \text{Non-Playing Safe Zone} \end{cases}$$
+Dengan teknik ini, seluruh piksel di Non-Playing Safe Zone bernilai $0$, sehingga operasi penemuan kontur (`cv2.findContours`) hanya memproses piksel di Playing Section. Wajah pemain 100% tereliminasi secara fisik dari komputasi.
 
-### 3.2. Operasi Morfologi Citra
+### 3.2. Segmentasi Multi-Ruang Warna (YCrCb + HSV)
+Memisahkan intensitas pencahayaan dari nilai krominans:
+* **Ruang YCrCb (Invarian Pencahayaan):**
+  $$Y \in [0, 255], \quad Cr \in [133, 175], \quad Cb \in [77, 127]$$
+* **Ruang HSV (Rona & Kejenuhan Kulit):**
+  $$H \in [0, 25] \cup [170, 180], \quad S \in [30, 210], \quad V \in [50, 255]$$
+* **Penggabungan Masker:**
+  $$M_{\text{raw}} = M_{\text{YCrCb}} \land (M_{\text{HSV1}} \lor M_{\text{HSV2}})$$
+
+### 3.3. Kalibrasi Warna Kulit Interaktif
+Saat masuk ke mode kalibrasi (`[C]`), pemain mengarahkan telapak tangan ke dalam kotak target berukuran $220 \times 220\text{ px}$. Sistem menghitung rata-rata ($\mu$) dan deviasi standar ($\sigma$) dari saluran $Cr, Cb$ serta $H, S$:
+$$Cr \in [\mu_{Cr} - 2.8\sigma_{Cr}, \, \mu_{Cr} + 2.8\sigma_{Cr}], \quad Cb \in [\mu_{Cb} - 2.8\sigma_{Cb}, \, \mu_{Cb} + 2.8\sigma_{Cb}]$$
+$$H \in [\mu_H - 2.6\sigma_H, \, \mu_H + 2.6\sigma_H], \quad S \in [\mu_S - 2.6\sigma_S, \, \mu_S + 2.6\sigma_S]$$
+Hasil kalibrasi disimpan otomatis di `save_data.json` dan dimuat ulang setiap sesi permainan.
+
+### 3.4. Operasi Morfologi Citra
 Membersihkan noise menggunakan elemen penstruktur elips $5 \times 5$ ($B$):
-$$M_{\text{clean}} = \left( (M_{\text{raw}} \circ B) \bullet B \right) \oplus B$$
-* **Opening ($M \circ B$):** Membuang derau garam (*salt noise*) pada latar belakang.
-* **Closing ($M \bullet B$):** Menutup celah gelap (*pepper noise*) di permukaan telapak tangan.
-* **Dilasi ($M \oplus B$):** Mempertegas batas tepi kontur.
+$$M_{\text{clean}} = \left( (M_{\text{isolated}} \circ B) \bullet B \right)$$
+* **Opening ($M \circ B$):** Menghilangkan derau bintik putih di latar belakang.
+* **Closing ($M \bullet B$):** Menutup lubang bayangan gelap di telapak tangan.
 
-### 3.3. Ekstraksi Titik Berat (*Spatial Moments*) & EMA Smoothing
+### 3.5. Ekstraksi Titik Berat (*Spatial Moments*) & EMA Smoothing
 Titik tengah $(cX, cY)$ dihitung menggunakan momen spasial orde pertama:
 $$cX_{\text{raw}} = \frac{m_{10}}{m_{00}}, \quad cY_{\text{raw}} = \frac{m_{01}}{m_{00}}$$
 Diterapkan filter *Exponential Moving Average* (EMA) dengan faktor $\alpha = 0.65$:
 $$\mathbf{C}_t = \alpha \mathbf{C}_{\text{raw}} + (1 - \alpha) \mathbf{C}_{t-1}$$
-Teknik ini menghasilkan kursor bidik yang sangat mulus tanpa getaran mikro (*anti-jitter*).
-
-### 3.4. Heuristik Multi-Candidate Scoring Anti-Wajah & Temporal Lock
-Untuk mencegah kursor terkunci pada kepala atau wajah pemain di tengah layar:
-1. **Penyaringan Multi-Kandidat**: Menilai seluruh kontur yang memenuhi ambang batas $1.800 \le \text{Area} \le 75.000\text{ px}$.
-2. **Penalti Zona Wajah**: Kontur dengan pusat massa di area atas-tengah ($y < 0.38H$ dan $|x - 0.5W| < 0.20W$) yang berbentuk oval pekat ($\text{Solidity} > 0.82$) diberikan penalti besar ($-4.500\text{ poin}$).
-3. **Bonus Zona Bermain & Geometri Tangan**: Kontur di zona bermain aktif serta memiliki cacat kecembungan (*convexity defects* celah jari) mendapat bonus $+2.000$ hingga $+3.500\text{ poin}$.
-4. **Temporal Hand Tracking Lock**: Kontur yang dekat dengan posisi tangan frame sebelumnya ($\Delta d < 200\text{ px}$) diberikan bonus pelacakan tinggi sehingga kursor mengunci gerakan tangan saat di-*drag* ke sudut layar mana pun tanpa melompat ke wajah.
-5. **Mode Kalibrasi Cepat (Tombol `C`)**: Pemain dapat menekan tombol `C` untuk mengambil sampel warna kulit telapak tangan pada kondisi pencahayaan ruangan saat bermain.
+Menghasilkan bidikan stabil dan halus tanpa getaran mikro (*anti-jitter*).
 
 ---
 
 ## 4. Fitur Gameplay & Mekanika
 
 ### 4.1. Navigasi Menu & Sentuhan Virtual (*Virtual Touch*)
-Selain menekan tombol keyboard, pemain dapat mengarahkan kursor tangan ke atas tombol UI. Kursor akan memunculkan lingkaran meteran pengisian progres melingkar selama $0.85\text{ detik}$, yang secara otomatis mengeklik tombol tersebut saat terisi penuh.
+Selain tombol keyboard angka `[1-6]`, pemain dapat mengarahkan kursor tangan ke atas tombol UI. Kursor akan memunculkan indikator cincin progres melingkar selama $0.85\text{ detik}$, yang secara otomatis mengeklik tombol tersebut saat terisi penuh.
 
 ### 4.2. Pilihan Konfigurasi Grid
 Pemain dapat menyesuaikan dimensi arena permainan:
 * **Grid 2x2 (4 Lubang):** Arena ringkas, cocok untuk pemula.
-* **Grid 2x3 (6 Lubang):** Tata letak klasik seimbang (Default).
+* **Grid 2x3 (6 Lubang):** Tata letak standar seimbang (Default).
 * **Grid 3x3 (9 Lubang):** Menantang koordinasi ruang vertikal dan horizontal.
 * **Grid 3x4 (12 Lubang):** Arena luas ekstrem untuk refleks tingkat tinggi.
 
@@ -99,13 +106,13 @@ Pemain dapat menyesuaikan dimensi arena permainan:
 
 ### 4.4. Mode Level Progression (Level 1 - 10)
 Sistem level bertingkat dengan target pukulan dan batas waktu spesifik:
-* **Level 1 ("Pemanasan"):** Target 8 mole / 30 detik (Kecepatan mole: 1.70s - 2.00s)
-* **Level 2 ("Refleks Cepat"):** Target 10 mole / 30 detik (Kecepatan mole: 1.50s - 1.80s)
-* **Level 3 ("Lubang Lincah"):** Target 12 mole / 30 detik (Kecepatan mole: 1.35s - 1.60s)
-* **Level 4 ("Fokus Ganda"):** Target 14 mole / 28 detik (Kecepatan mole: 1.20s - 1.45s)
-* **Level 5 ("Irama Cepat"):** Target 16 mole / 28 detik (Kecepatan mole: 1.10s - 1.30s)
-* **Level 6 ("Ujian Akurasi"):** Target 18 mole / 26 detik (Kecepatan mole: 1.00s - 1.20s)
-* **Level 7 ("Serbuan Mole"):** Target 20 mole / 25 detik (Kecepatan mole: 0.90s - 1.10s)
+* **Level 1 ("Pemanasan"):** Target 8 mole / 30 detik (Kecepatan: 1.70s - 2.00s)
+* **Level 2 ("Refleks Cepat"):** Target 10 mole / 30 detik (Kecepatan: 1.50s - 1.80s)
+* **Level 3 ("Lubang Lincah"):** Target 12 mole / 30 detik (Kecepatan: 1.35s - 1.60s)
+* **Level 4 ("Fokus Ganda"):** Target 14 mole / 28 detik (Kecepatan: 1.20s - 1.45s)
+* **Level 5 ("Irama Cepat"):** Target 16 mole / 28 detik (Kecepatan: 1.10s - 1.30s)
+* **Level 6 ("Ujian Akurasi"):** Target 18 mole / 26 detik (Kecepatan: 1.00s - 1.20s)
+* **Level 7 ("Serbuan Mole"):** Target 20 mole / 25 detik (Kecepatan: 0.90s - 1.10s)
 * **Level 8 ("Badai Refleks"):** Target 22 mole / 25 detik (2 mole simultan, Kecepatan: 0.80s - 1.00s)
 * **Level 9 ("Zona Ekstrem"):** Target 25 mole / 25 detik (2 mole simultan, Kecepatan: 0.70s - 0.90s)
 * **Level 10 ("Grandmaster"):** Target 30 mole / 25 detik (2 mole simultan, Kecepatan: 0.55s - 0.75s)
@@ -148,11 +155,12 @@ python main.py
 ### Navigasi & Kontrol Keyboard
 | Tombol | Fungsi |
 | :--- | :--- |
-| **`1` - `5`** | Memilih opsi menu pada Menu Utama |
+| **`1` - `6`** | Memilih opsi menu pada Menu Utama (Survival, Level, Grid, Kalibrasi, Audio, Keluar) |
 | **`1` - `9`, `0`** | Memilih Level 1 s.d. 10 pada layar Level Select |
 | **`1` - `4`** | Memilih ukuran Grid pada layar Grid Select |
-| **`C`** | Masuk ke Mode Kalibrasi Warna Kulit (Arahkan tangan ke kotak hijau lalu tekan SPASI) |
-| **`SPASI`** | Melanjutkan ke level berikutnya saat Level Clear / Kunci kalibrasi |
+| **`C`** | Masuk/Keluar Mode Kalibrasi Warna Kulit |
+| **`SPASI` / `ENTER`** | Mengunci kalibrasi warna kulit / Melanjutkan ke level berikutnya saat Level Clear |
+| **`H` / `TAB`** | Mengganti orientasi zona bermain (Tangan Kanan, Tangan Kiri, Tangan Bawah) |
 | **`R`** | Mengulang (*Restart*) sesi permainan saat Game Over |
 | **`S`** | Menyalakan / mematikan master audio (*Toggle Sound*) |
 | **`P`** | Menyalakan / mematikan jendela Picture-in-Picture (PiP) Masker Kulit |

@@ -78,11 +78,15 @@ project-1/
 ---
 
 ### 3. Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`)
-* **Konsep**: Game interaktif arcade memukul karakter "mole" yang muncul secara acak di salah satu dari 6 lubang target (grid 2x3) di atas feed webcam cermin secara *real-time*.
-* **Mekanik Permainan**:
-  * **Pelacakan Centroid Tangan**: Segmentasi warna kulit HSV dual-range dan momen spasial $cX = m_{10}/m_{00}, cY = m_{01}/m_{00}$ dengan stabilisasi EMA smoothing.
-  * **Deteksi Tabrakan (Hit Detection)**: Jarak Euclidean ke pusat mole aktif dengan jeda *debounce cooldown* 0,4 detik.
-  * **Visual & Efek**: Timer radial mole, HUD skor & countdown 30s, animasi ledakan `+1 HIT!`, serta fitur PiP Mask View (`M`).
+* **Konsep**: Game interaktif arcade memukul karakter "mole" di atas kanvas HD widescreen ($1280 \times 720$) berbasis pelacakan titik berat (*centroid*) telapak tangan tanpa pustaka deep learning.
+* **Fitur Utama**:
+  * **HD Dual-Section Partition**: Membagi layar menjadi *Playing Section* (area aktif bermain & kursor tangan) dan *Non-Playing Safe Zone* (area kepala/wajah yang dinolkan pada masker biner segmentasi sehingga 100% mustahil wajah membajak kursor). Tombol `[H]` / `[TAB]` untuk berganti orientasi tangan (Kanan, Kiri, Bawah).
+  * **Kalibrasi Warna Kulit Lengkap**: Mengambil sampel statistik telapak tangan pemain pada ruang warna YCrCb dan HSV via tombol `[C]` / Menu Utama, tersimpan permanen di `save_data.json`.
+  * **Main Menu Interaktif & Virtual Touch**: Memilih menu dengan tombol keyboard angka `[1-6]` atau melayangkan kursor tangan di atas tombol (*hover* ~0.85 detik).
+  * **Mode Survival (Endless)**: Intensitas meningkat dinamis seiring durasi bertahan (kecepatan mole menyusut hingga 0.55s, mole ganda, sistem nyawa 3 HP, dan multiplier combo).
+  * **Mode Level Progression (1 - 10)**: Sistem perkembangan 10 level dengan syarat menuntaskan level sebelumnya untuk membuka level selanjutnya.
+  * **Multi-Grid Preset**: Konfigurasi ukuran grid $2 \times 2$ (4 lubang), $2 \times 3$ (6 lubang), $3 \times 3$ (9 lubang), dan $3 \times 4$ (12 lubang).
+  * **Sintesis Audio Prosedural & BGM Dinamis Adaptif**: Efek suara (*click*, *bonk*, *miss*, *clear*, *game over*) dan 4 tingkat musik latar *chiptune* disintesis murni secara matematis menggunakan NumPy.
 * **Eksekusi**:
   ```bash
   python whack-a-mole/main.py

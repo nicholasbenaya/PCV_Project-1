@@ -1,30 +1,52 @@
-"""Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio."""
+"""Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio (HD 1280x720)."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import numpy as np
 
-# Pengaturan kamera webcam
-DEFAULT_FRAME_WIDTH = 640
-DEFAULT_FRAME_HEIGHT = 480
-WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual"
+# Pengaturan kanvas dan kamera diperbesar ke HD widescreen
+DEFAULT_FRAME_WIDTH = 1280
+DEFAULT_FRAME_HEIGHT = 720
+WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual (HD 1280x720)"
 
-# Rentang segmentasi warna kulit manusia pada HSV (H: 0..179 di OpenCV)
+# Rentang segmentasi warna kulit manusia default pada HSV (H: 0..179 di OpenCV)
 LOWER_SKIN_1 = np.array([0, 30, 50], dtype=np.uint8)
 UPPER_SKIN_1 = np.array([25, 210, 255], dtype=np.uint8)
 LOWER_SKIN_2 = np.array([170, 30, 50], dtype=np.uint8)
 UPPER_SKIN_2 = np.array([180, 210, 255], dtype=np.uint8)
 
-# Rentang segmentasi warna kulit YCrCb (invarian pencahayaan)
+# Rentang segmentasi warna kulit default pada YCrCb (invarian pencahayaan)
 LOWER_SKIN_YCRCB = np.array([0, 133, 77], dtype=np.uint8)
 UPPER_SKIN_YCRCB = np.array([255, 175, 127], dtype=np.uint8)
 
 # Parameter pembersihan kontur dan pelacakan
 MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
-MAX_HAND_CONTOUR_AREA = 75000  # Batas atas untuk mengeliminasi badan/torso/dinding
+MAX_HAND_CONTOUR_AREA = 120000  # Batas atas untuk mengeliminasi background masif
 CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)
 BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual (detik)
+
+# Preset Dual-Section (Playing Section vs Non-Playing Safe Zone)
+ZONE_PRESETS: List[Dict[str, Any]] = [
+    {
+        "name": "TANGAN KANAN (Kiri: Wajah Diblokir)",
+        "play_rect": (420, 0, 1280, 720),
+        "safe_rect": (0, 0, 420, 720),
+        "split_line": ((420, 0), (420, 720)),
+    },
+    {
+        "name": "TANGAN KIRI (Kanan: Wajah Diblokir)",
+        "play_rect": (0, 0, 860, 720),
+        "safe_rect": (860, 0, 1280, 720),
+        "split_line": ((860, 0), (860, 720)),
+    },
+    {
+        "name": "TANGAN BAWAH (Atas: Wajah Diblokir)",
+        "play_rect": (0, 240, 1280, 720),
+        "safe_rect": (0, 0, 1280, 240),
+        "split_line": ((0, 240), (1280, 240)),
+    },
+]
 
 # Pilihan preset ukuran grid (baris, kolom)
 GRID_PRESETS: List[Tuple[int, int]] = [
@@ -84,8 +106,8 @@ COLOR_RETICLE = (255, 220, 0)
 COLOR_HOLE_OUTER = (80, 80, 80)
 COLOR_HOLE_INNER = (35, 35, 35)
 COLOR_MOLE_BODY = (40, 120, 225)
-COLOR_BUTTON_BG = (45, 45, 45)
-COLOR_BUTTON_HOVER = (70, 70, 70)
+COLOR_BUTTON_BG = (42, 42, 45)
+COLOR_BUTTON_HOVER = (65, 65, 75)
 COLOR_BUTTON_BORDER = (0, 200, 255)
 COLOR_HEART_RED = (0, 0, 235)
 COLOR_LOCKED_GRAY = (90, 90, 90)

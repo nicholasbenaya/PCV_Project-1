@@ -3,5 +3,6 @@
   "level_high_scores": {},
   "level_cleared": {},
   "survival_high_score": 0,
-  "selected_grid_index": 1
+  "selected_grid_index": 1,
+  "calib_data": null
 }

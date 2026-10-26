@@ -1,8 +1,8 @@
-"""Manajer penyimpanan data persistensi level progression dan rekor skor."""
+"""Manajer penyimpanan data persistensi level progression, rekor skor, dan kalibrasi."""
 
 import json
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 try:
     from .config import DEFAULT_GRID_INDEX
@@ -22,6 +22,7 @@ class SaveManager:
         self.level_cleared: Dict[str, bool] = {}
         self.survival_high_score: int = 0
         self.selected_grid_index: int = DEFAULT_GRID_INDEX
+        self.calib_data: Optional[Dict] = None
 
         self.load()
 
@@ -39,13 +40,14 @@ class SaveManager:
             self.level_cleared = data.get("level_cleared", {})
             self.survival_high_score = int(data.get("survival_high_score", 0))
             self.selected_grid_index = int(data.get("selected_grid_index", DEFAULT_GRID_INDEX))
+            self.calib_data = data.get("calib_data", None)
         except Exception:
-            # Gunakan nilai default jika file korup
             self.unlocked_level = 1
             self.level_high_scores = {}
             self.level_cleared = {}
             self.survival_high_score = 0
             self.selected_grid_index = DEFAULT_GRID_INDEX
+            self.calib_data = None
 
     def save(self) -> None:
         """Menyimpan data progres ke file JSON."""
@@ -55,6 +57,7 @@ class SaveManager:
             "level_cleared": self.level_cleared,
             "survival_high_score": self.survival_high_score,
             "selected_grid_index": self.selected_grid_index,
+            "calib_data": self.calib_data,
         }
         try:
             with open(self.filepath, "w", encoding="utf-8") as f:
@@ -89,4 +92,9 @@ class SaveManager:
     def set_grid_index(self, index: int) -> None:
         """Menyimpan preferensi grid terpilih."""
         self.selected_grid_index = index
+        self.save()
+
+    def set_calibration_data(self, calib: Dict) -> None:
+        """Menyimpan profil kalibrasi warna kulit pemain."""
+        self.calib_data = calib
         self.save()

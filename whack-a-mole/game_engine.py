@@ -1,8 +1,8 @@
-"""Mesin logika game (State Machine, Audio Trigger, Survival Mode, Level Mode)."""
+"""Mesin logika game (State Machine, Audio Trigger, Survival Mode, Level Mode, Dual-Section & Kalibrasi)."""
 
 from enum import Enum
 import random
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 try:
@@ -14,6 +14,7 @@ try:
         HIT_DEBOUNCE_COOLDOWN,
         HIT_EFFECT_DURATION,
         LEVEL_CONFIGS,
+        ZONE_PRESETS,
         LevelConfig,
     )
     from .entities import (
@@ -24,7 +25,7 @@ try:
         ScoreManager,
         SurvivalTracker,
     )
-    from .hand_tracker import HandTrackingResult
+    from .hand_tracker import HandTracker, HandTrackingResult
     from .save_manager import SaveManager
     from .ui_renderer import UIRenderer
 except ImportError:
@@ -36,6 +37,7 @@ except ImportError:
         HIT_DEBOUNCE_COOLDOWN,
         HIT_EFFECT_DURATION,
         LEVEL_CONFIGS,
+        ZONE_PRESETS,
         LevelConfig,
     )
     from entities import (
@@ -46,7 +48,7 @@ except ImportError:
         ScoreManager,
         SurvivalTracker,
     )
-    from hand_tracker import HandTrackingResult
+    from hand_tracker import HandTracker, HandTrackingResult
     from save_manager import SaveManager
     from ui_renderer import UIRenderer
 
@@ -61,10 +63,11 @@ class GameState(Enum):
     PLAYING_LEVEL = 4
     LEVEL_CLEARED = 5
     GAMEOVER = 6
+    CALIBRATION = 7
 
 
 class GameEngine:
-    """Mesin pengontrol alur permainan, logika tabrakan, dan integrasi audio."""
+    """Mesin pengontrol alur permainan, logika tabrakan, isolasi Playing Section, dan integrasi audio."""
 
     def __init__(
         self,
@@ -80,6 +83,10 @@ class GameEngine:
         self.score_manager = ScoreManager()
 
         self.state: GameState = GameState.MENU
+
+        # Preset zona partisi (Playing Section vs Non-Playing Safe Zone)
+        self.zone_index: int = 0
+        self.active_zone: Dict = ZONE_PRESETS[self.zone_index]
 
         # Konfigurasi grid lubang
         self.selected_grid_idx = self.save_manager.selected_grid_index
@@ -104,29 +111,38 @@ class GameEngine:
         self.grid_buttons: List[InteractiveButton] = []
         self._rebuild_all_buttons()
 
+    def switch_zone(self) -> str:
+        """Mengganti orientasi Playing Section (Kanan, Kiri, atau Bawah)."""
+        self.zone_index = (self.zone_index + 1) % len(ZONE_PRESETS)
+        self.active_zone = ZONE_PRESETS[self.zone_index]
+        self._rebuild_holes()
+        self._rebuild_all_buttons()
+        return self.active_zone["name"]
+
+    def get_calibration_box(self) -> Tuple[int, int, int, int]:
+        """Menghitung kotak area target kalibrasi di tengah Playing Section."""
+        px1, py1, px2, py2 = self.active_zone["play_rect"]
+        box_size = 220
+        cx = (px1 + px2) // 2
+        cy = (py1 + py2) // 2
+        return (cx - box_size // 2, cy - box_size // 2, cx + box_size // 2, cy + box_size // 2)
+
     def _rebuild_holes(self) -> None:
-        """Menghitung ulang tata letak koordinat lubang berdasarkan preset grid terpilih."""
+        """Menghitung ulang posisi lubang di dalam Playing Section."""
         rows, cols = GRID_PRESETS[self.selected_grid_idx]
-        w, h = self.frame_width, self.frame_height
+        px1, py1, px2, py2 = self.active_zone["play_rect"]
+        pw = px2 - px1
+        ph = py2 - py1
 
-        # Penyesuaian margin atas untuk area HUD
-        top_margin = int(h * 0.28)
-        bottom_margin = int(h * 0.88)
-        left_margin = int(w * 0.16)
-        right_margin = int(w * 0.84)
+        top_margin = py1 + int(ph * 0.22)
+        bottom_margin = py1 + int(ph * 0.88)
+        left_margin = px1 + int(pw * 0.12)
+        right_margin = px1 + int(pw * 0.88)
 
-        if cols > 1:
-            step_x = (right_margin - left_margin) // (cols - 1)
-        else:
-            step_x = 0
+        step_x = (right_margin - left_margin) // (cols - 1) if cols > 1 else 0
+        step_y = (bottom_margin - top_margin) // (rows - 1) if rows > 1 else 0
 
-        if rows > 1:
-            step_y = (bottom_margin - top_margin) // (rows - 1)
-        else:
-            step_y = 0
-
-        # Radius lubang disesuaikan dengan kerapatan grid
-        base_radius = int(min(w, h) * (0.12 if max(rows, cols) <= 3 else 0.085))
+        base_radius = int(min(pw, ph) * (0.12 if max(rows, cols) <= 3 else 0.085))
 
         self.holes.clear()
         idx = 0
@@ -138,22 +154,25 @@ class GameEngine:
                 idx += 1
 
     def _rebuild_all_buttons(self) -> None:
-        """Membangun layout tombol interaktif untuk Menu Utama, Level Select, dan Grid Select."""
-        w, h = self.frame_width, self.frame_height
+        """Membangun layout tombol interaktif di dalam Playing Section."""
+        px1, py1, px2, py2 = self.active_zone["play_rect"]
+        pw = px2 - px1
 
-        # 1. Tombol Menu Utama
+        # 1. Tombol Menu Utama (6 tombol)
         self.menu_buttons.clear()
-        btn_w, btn_h = int(w * 0.68), 44
-        bx1 = (w - btn_w) // 2
-        start_y = 150
-        spacing = 54
+        btn_w = min(int(pw * 0.78), 580)
+        btn_h = 46
+        bx1 = px1 + (pw - btn_w) // 2
+        start_y = py1 + 205
+        spacing = 58
 
         menu_items = [
             ("MODE SURVIVAL (Endless)", "action_survival", "[1]"),
             ("MODE LEVEL (1 - 10)", "action_level_select", "[2]"),
-            ("PILIH UKURAN GRID", "action_grid_select", "[3]"),
-            ("TOGGLE AUDIO (ON/OFF)", "action_toggle_audio", "[4] / [S]"),
-            ("KELUAR PERMAINAN", "action_exit", "[5] / [Q]"),
+            ("PENGATURAN GRID", "action_grid_select", "[3]"),
+            ("KALIBRASI WARNA KULIT", "action_calibration", "[4] / [C]"),
+            ("PENGATURAN AUDIO (ON/OFF)", "action_toggle_audio", "[5] / [S]"),
+            ("KELUAR PERMAINAN", "action_exit", "[6] / [Q]"),
         ]
 
         for i, (lbl, act, hotkey) in enumerate(menu_items):
@@ -169,11 +188,12 @@ class GameEngine:
 
         # 2. Tombol Level Select (2 baris x 5 kolom)
         self.level_buttons.clear()
-        lvl_w, lvl_h = int(w * 0.15), 58
-        margin_x = int(w * 0.08)
-        step_lx = (w - 2 * margin_x - 5 * lvl_w) // 4 + lvl_w
-        start_ly = 110
-        step_ly = 78
+        lvl_w = min(int(pw * 0.16), 120)
+        lvl_h = 62
+        margin_x = px1 + int(pw * 0.06)
+        step_lx = (pw - 2 * int(pw * 0.06) - 5 * lvl_w) // 4 + lvl_w
+        start_ly = py1 + 180
+        step_ly = 90
 
         for lvl in range(1, 11):
             row = 0 if lvl <= 5 else 1
@@ -193,9 +213,13 @@ class GameEngine:
             )
 
         # Tombol kembali di Level Select
+        back_w = 260
+        back_h = 46
+        back_x1 = px1 + (pw - back_w) // 2
+        back_y1 = py2 - 80
         self.level_buttons.append(
             InteractiveButton(
-                rect=(w // 2 - 100, h - 68, w // 2 + 100, h - 28),
+                rect=(back_x1, back_y1, back_x1 + back_w, back_y1 + back_h),
                 label="KEMBALI KE MENU",
                 action_id="action_menu",
                 hotkey_desc="[ESC]",
@@ -204,14 +228,15 @@ class GameEngine:
 
         # 3. Tombol Grid Select (4 Kartu)
         self.grid_buttons.clear()
-        gw, gh = int(w * 0.65), 52
-        gx1 = (w - gw) // 2
-        start_gy = 115
-        step_gy = 62
+        gw = min(int(pw * 0.78), 580)
+        gh = 56
+        gx1 = px1 + (pw - gw) // 2
+        start_gy = py1 + 170
+        step_gy = 72
 
         grid_labels = [
             ("GRID 2 x 2  (4 Lubang - Pemula)", "grid_0", "[1]"),
-            ("GRID 2 x 3  (6 Lubang - Klasik)", "grid_1", "[2]"),
+            ("GRID 2 x 3  (6 Lubang - Standar)", "grid_1", "[2]"),
             ("GRID 3 x 3  (9 Lubang - Menantang)", "grid_2", "[3]"),
             ("GRID 3 x 4  (12 Lubang - Luas)", "grid_3", "[4]"),
         ]
@@ -230,7 +255,7 @@ class GameEngine:
         # Tombol kembali di Grid Select
         self.grid_buttons.append(
             InteractiveButton(
-                rect=(w // 2 - 100, h - 55, w // 2 + 100, h - 18),
+                rect=(back_x1, back_y1, back_x1 + back_w, back_y1 + back_h),
                 label="KEMBALI KE MENU",
                 action_id="action_menu",
                 hotkey_desc="[ESC]",
@@ -253,7 +278,6 @@ class GameEngine:
         self.hit_effects.clear()
         self.last_hit_time = 0.0
 
-        # Mulai dengan 1 mole
         self.moles = [
             Mole(
                 mole_id=1,
@@ -277,7 +301,6 @@ class GameEngine:
 
         cfg = LEVEL_CONFIGS[level_num]
 
-        # Inisialisasi mole berdasarkan jumlah kemunculan simultan level
         self.moles = []
         forbidden = []
         for i in range(cfg.simultaneous_moles):
@@ -296,7 +319,7 @@ class GameEngine:
         self.audio.play_sfx("click")
         self.audio.set_bgm_intensity(cfg.bgm_intensity)
 
-    def handle_button_action(self, action_id: str, current_time: float) -> None:
+    def handle_button_action(self, action_id: str, current_time: float) -> Optional[str]:
         """Mengeksekusi perintah dari tombol UI."""
         self.audio.play_sfx("click")
 
@@ -306,8 +329,12 @@ class GameEngine:
             self.state = GameState.LEVEL_SELECT
         elif action_id == "action_grid_select":
             self.state = GameState.GRID_SELECT
+        elif action_id == "action_calibration":
+            self.state = GameState.CALIBRATION
         elif action_id == "action_toggle_audio":
             self.audio.toggle_sound()
+        elif action_id == "action_exit":
+            return "exit"
         elif action_id == "action_menu":
             self.audio.stop_bgm()
             self.state = GameState.MENU
@@ -320,8 +347,9 @@ class GameEngine:
             self.selected_grid_idx = idx
             self.save_manager.set_grid_index(idx)
             self._rebuild_holes()
+        return None
 
-    def update(self, hand_result: HandTrackingResult, current_time: float) -> None:
+    def update(self, hand_result: HandTrackingResult, current_time: float) -> Optional[str]:
         """Memperbarui alur logika per frame."""
         centroid = hand_result.centroid
 
@@ -339,17 +367,21 @@ class GameEngine:
             for btn in buttons:
                 clicked = btn.update_hover(centroid, current_time)
                 if clicked:
-                    self.handle_button_action(btn.action_id, current_time)
+                    res = self.handle_button_action(btn.action_id, current_time)
+                    if res == "exit":
+                        return "exit"
                     break
-            return
+            return None
 
-        # 2. Update Mode Survival
+        # 2. Kalibrasi tidak memproses gameplay pukulan
+        if self.state == GameState.CALIBRATION:
+            return None
+
+        # 3. Update Mode Survival
         if self.state == GameState.PLAYING_SURVIVAL and self.survival_tracker is not None:
-            # Perbarui musik adaptif berdasarkan intensitas survival
             current_tier = self.survival_tracker.get_intensity_tier(current_time)
             self.audio.set_bgm_intensity(current_tier)
 
-            # Sesuaikan jumlah mole simultan
             target_moles = self.survival_tracker.get_simultaneous_moles_count(
                 current_time, len(self.holes)
             )
@@ -368,7 +400,6 @@ class GameEngine:
                     )
                 )
 
-            # Periksa mole kadaluarsa (kabur -> kehilangan 1 nyawa)
             forbidden_holes = [m.current_hole_idx for m in self.moles]
             for mole in self.moles:
                 if mole.is_expired(current_time):
@@ -377,12 +408,11 @@ class GameEngine:
                     is_alive = self.survival_tracker.lose_life()
 
                     if not is_alive:
-                        # Kalah di mode survival
                         self.audio.stop_bgm()
                         self.audio.play_sfx("game_over")
                         self.save_manager.record_survival_score(self.score_manager.score)
                         self.state = GameState.GAMEOVER
-                        return
+                        return None
 
                     mole.respawn(
                         current_time,
@@ -392,14 +422,12 @@ class GameEngine:
                         speed_max,
                     )
 
-            # Deteksi pukulan (Hit Detection)
             if hand_result.is_detected and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
                     for mole in self.moles:
                         hole = self.holes[mole.current_hole_idx]
                         if hole.contains(centroid):
-                            # Pukulan valid
                             self.audio.play_sfx("whack")
                             self.score_manager.record_hit()
                             self.last_hit_time = current_time
@@ -413,7 +441,6 @@ class GameEngine:
                                 )
                             )
 
-                            # Respawn mole yang kena
                             forbidden = [m.current_hole_idx for m in self.moles]
                             mole.respawn(
                                 current_time,
@@ -424,13 +451,12 @@ class GameEngine:
                             )
                             break
 
-        # 3. Update Mode Level Progression
+        # 4. Update Mode Level Progression
         elif self.state == GameState.PLAYING_LEVEL:
             cfg = LEVEL_CONFIGS[self.current_level]
             elapsed = current_time - self.level_start_time
             time_left = cfg.duration_seconds - elapsed
 
-            # Cek syarat kemenangan level
             if self.score_manager.hits_count >= cfg.target_hits:
                 self.audio.stop_bgm()
                 self.audio.play_sfx("level_clear")
@@ -438,16 +464,14 @@ class GameEngine:
                 self.save_manager.unlock_next_level(self.current_level)
                 self._rebuild_all_buttons()
                 self.state = GameState.LEVEL_CLEARED
-                return
+                return None
 
-            # Cek batas waktu level habis
             if time_left <= 0:
                 self.audio.stop_bgm()
                 self.audio.play_sfx("game_over")
                 self.state = GameState.GAMEOVER
-                return
+                return None
 
-            # Periksa mole kadaluarsa
             forbidden = [m.current_hole_idx for m in self.moles]
             for mole in self.moles:
                 if mole.is_expired(current_time):
@@ -461,7 +485,6 @@ class GameEngine:
                         cfg.mole_max_lifespan,
                     )
 
-            # Deteksi pukulan
             if hand_result.is_detected and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
@@ -491,20 +514,24 @@ class GameEngine:
                             )
                             break
 
-        # Bersihkan efek pukulan yang sudah selesai animasinya
         self.hit_effects = [e for e in self.hit_effects if e.is_alive(current_time)]
+        return None
 
     def render(
         self,
         frame: np.ndarray,
         hand_result: HandTrackingResult,
+        hand_tracker: HandTracker,
         current_time: float,
         show_mask_pip: bool = False,
     ) -> None:
         """Merender seluruh lapisan antarmuka grafis ke frame kamera."""
         centroid = hand_result.centroid
 
-        # Cari rasio progres hover tombol yang aktif
+        # 1. Gambar partisi Dual-Section (Playing Section vs Non-Playing Safe Zone)
+        self.renderer.draw_sections_overlay(frame, self.active_zone)
+
+        # 2. Cari rasio progres hover tombol yang aktif
         hover_progress = 0.0
         if self.state == GameState.MENU:
             for btn in self.menu_buttons:
@@ -522,7 +549,9 @@ class GameEngine:
                     hover_progress = btn.get_hover_ratio(current_time)
                     break
 
-        # Render berdasarkan state aktif
+        play_rect = self.active_zone["play_rect"]
+
+        # 3. Render elemen spesifik tiap GameState
         if self.state == GameState.MENU:
             rows, cols = GRID_PRESETS[self.selected_grid_idx]
             grid_desc = f"{rows}x{cols} ({rows * cols} Lubang)"
@@ -531,9 +560,20 @@ class GameEngine:
                 self.menu_buttons,
                 grid_desc=grid_desc,
                 audio_enabled=self.audio.enabled,
+                is_calibrated=hand_tracker.is_calibrated,
                 survival_high_score=self.save_manager.survival_high_score,
                 unlocked_level=self.save_manager.unlocked_level,
+                play_rect=play_rect,
                 current_time=current_time,
+            )
+
+        elif self.state == GameState.CALIBRATION:
+            box_rect = self.get_calibration_box()
+            self.renderer.draw_calibration_view(
+                frame,
+                box_rect=box_rect,
+                calib_info=hand_tracker.calib_info,
+                is_calibrated=hand_tracker.is_calibrated,
             )
 
         elif self.state == GameState.LEVEL_SELECT:
@@ -542,6 +582,7 @@ class GameEngine:
                 self.level_buttons,
                 unlocked_level=self.save_manager.unlocked_level,
                 high_scores=self.save_manager.level_high_scores,
+                play_rect=play_rect,
                 current_time=current_time,
             )
 
@@ -550,6 +591,7 @@ class GameEngine:
                 frame,
                 self.grid_buttons,
                 selected_index=self.selected_grid_idx,
+                play_rect=play_rect,
                 current_time=current_time,
             )
 
@@ -563,7 +605,8 @@ class GameEngine:
                 self.survival_tracker,
                 self.save_manager.survival_high_score,
                 hand_result.is_detected,
-                current_time,
+                play_rect=play_rect,
+                current_time=current_time,
             )
 
         elif self.state == GameState.PLAYING_LEVEL:
@@ -582,6 +625,7 @@ class GameEngine:
                 time_left,
                 best,
                 hand_result.is_detected,
+                play_rect=play_rect,
             )
 
         elif self.state == GameState.LEVEL_CLEARED:
@@ -637,6 +681,6 @@ class GameEngine:
         # Gambar kursor tangan di atas seluruh elemen
         self.renderer.draw_hand_cursor(frame, centroid, hover_progress)
 
-        # Inset Picture-in-Picture untuk monitoring masker biner
+        # Inset Picture-in-Picture untuk monitoring masker biner di Playing Section
         if show_mask_pip and hand_result.mask is not None:
             self.renderer.draw_mask_pip(frame, hand_result.mask)

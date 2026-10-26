@@ -32,7 +32,7 @@ except ImportError:
 def parse_arguments() -> argparse.Namespace:
     """Menguraikan argumen baris perintah saat menjalankan program."""
     parser = argparse.ArgumentParser(
-        description="Game Whack-A-Mole Virtual berbasis OpenCV murni dengan Menu & Audio Sintetis."
+        description="Game Whack-A-Mole Virtual berbasis OpenCV murni dengan HD Dual-Section, Menu & Audio."
     )
     parser.add_argument(
         "--camera",
@@ -78,6 +78,9 @@ def run_game() -> None:
         frame_height=args.height,
     )
 
+    # Muat konfigurasi kalibrasi warna kulit jika ada di penyimpanan lokal
+    hand_tracker.load_saved_calibration(game_engine.save_manager.calib_data)
+
     show_mask_pip = False
 
     try:
@@ -89,52 +92,42 @@ def run_game() -> None:
 
             # Flip horizontal agar cermin natural bagi koordinasi tangan pemain
             frame = cv2.flip(frame, 1)
-            h, w = frame.shape[:2]
-            game_engine.update_frame_dimensions(w, h)
 
+            # Resize ke resolusi target jika kamera memiliki rasio berbeda
+            h, w = frame.shape[:2]
+            if (w, h) != (args.width, args.height):
+                frame = cv2.resize(frame, (args.width, args.height))
+                h, w = args.height, args.width
+
+            game_engine.update_frame_dimensions(w, h)
             current_time = time.time()
 
-            # Segmentasi warna kulit dan kalkulasi centroid tangan
-            hand_result = hand_tracker.process_frame(frame)
+            # Segmentasi warna kulit dengan isolasi Playing Section (eliminasi wajah di Non-Playing Section)
+            play_rect = game_engine.active_zone["play_rect"]
+            hand_result = hand_tracker.process_frame(frame, play_rect=play_rect)
 
-            # Update alur game, tabrakan, dan audio
-            game_engine.update(hand_result, current_time)
+            # Update alur game, interaksi tombol, dan logika tabrakan
+            action_status = game_engine.update(hand_result, current_time)
+            if action_status == "exit":
+                break
 
             # Render seluruh elemen visual antarmuka
             game_engine.render(
                 frame,
                 hand_result,
+                hand_tracker,
                 current_time,
                 show_mask_pip=show_mask_pip,
             )
-
-            # Render overlay mode kalibrasi jika sedang aktif
-            if hand_tracker.calibration_mode:
-                calib_w, calib_h = 200, 200
-                bx1, by1 = (w - calib_w) // 2, (h - calib_h) // 2
-                bx2, by2 = bx1 + calib_w, by1 + calib_h
-                game_engine.renderer.draw_calibration_box(frame, (bx1, by1, bx2, by2))
 
             cv2.imshow(WINDOW_TITLE, frame)
 
             key = cv2.waitKey(1) & 0xFF
 
-            # Penanganan kalibrasi warna kulit dengan tombol 'C'
-            if key in (ord("c"), ord("C")):
-                hand_tracker.calibration_mode = not hand_tracker.calibration_mode
-
-            elif hand_tracker.calibration_mode and key in (13, 32):  # ENTER atau SPASI untuk kunci kalibrasi
-                calib_w, calib_h = 200, 200
-                bx1, by1 = (w - calib_w) // 2, (h - calib_h) // 2
-                bx2, by2 = bx1 + calib_w, by1 + calib_h
-                roi = frame[by1:by2, bx1:bx2]
-                hand_tracker.calibrate_skin_sample(roi)
-                game_engine.audio.play_sfx("click")
-
             # Penanganan tombol keluar aplikasi secara global
-            elif key == 27:  # ESC key
-                if hand_tracker.calibration_mode:
-                    hand_tracker.calibration_mode = False
+            if key == 27:  # ESC key
+                if game_engine.state == GameState.CALIBRATION:
+                    game_engine.state = GameState.MENU
                 elif game_engine.state in (GameState.LEVEL_SELECT, GameState.GRID_SELECT):
                     game_engine.state = GameState.MENU
                     game_engine.audio.stop_bgm()
@@ -144,8 +137,13 @@ def run_game() -> None:
                 elif game_engine.state in (GameState.LEVEL_CLEARED, GameState.GAMEOVER):
                     game_engine.state = GameState.MENU
                     game_engine.audio.stop_bgm()
-                else:
+                elif game_engine.state == GameState.MENU:
                     break
+
+            # Ganti sisi Playing Section dengan tombol 'H' atau 'TAB'
+            elif key in (ord("h"), ord("H"), 9):  # 9 is TAB
+                new_zone_name = game_engine.switch_zone()
+                game_engine.audio.play_sfx("click")
 
             # Toggle PiP Masker Kulit dengan tombol 'P'
             elif key in (ord("p"), ord("P")):
@@ -155,7 +153,24 @@ def run_game() -> None:
             elif key in (ord("s"), ord("S")):
                 game_engine.audio.toggle_sound()
 
-            # Penanganan tombol berdasarkan state aktif
+            # Masuk atau keluar mode kalibrasi dengan tombol 'C'
+            elif key in (ord("c"), ord("C")):
+                if game_engine.state == GameState.CALIBRATION:
+                    game_engine.state = GameState.MENU
+                else:
+                    game_engine.state = GameState.CALIBRATION
+                game_engine.audio.play_sfx("click")
+
+            # Kontrol saat di layar Kalibrasi
+            elif game_engine.state == GameState.CALIBRATION:
+                if key in (13, 32):  # ENTER atau SPASI untuk mengunci kalibrasi
+                    bx1, by1, bx2, by2 = game_engine.get_calibration_box()
+                    roi = frame[by1:by2, bx1:bx2]
+                    calib_dict = hand_tracker.calibrate_skin_sample(roi)
+                    game_engine.save_manager.set_calibration_data(calib_dict)
+                    game_engine.audio.play_sfx("bonk")
+
+            # Kontrol saat di Menu Utama
             elif game_engine.state == GameState.MENU:
                 if key in (ord("q"), ord("Q")):
                     break
@@ -163,16 +178,23 @@ def run_game() -> None:
                     game_engine.start_survival_mode(current_time)
                 elif key == ord("2"):
                     game_engine.state = GameState.LEVEL_SELECT
+                    game_engine.audio.play_sfx("click")
                 elif key == ord("3"):
                     game_engine.state = GameState.GRID_SELECT
+                    game_engine.audio.play_sfx("click")
                 elif key == ord("4"):
-                    game_engine.audio.toggle_sound()
+                    game_engine.state = GameState.CALIBRATION
+                    game_engine.audio.play_sfx("click")
                 elif key == ord("5"):
+                    game_engine.audio.toggle_sound()
+                elif key == ord("6"):
                     break
 
+            # Kontrol saat di Pemilihan Level
             elif game_engine.state == GameState.LEVEL_SELECT:
                 if key in (ord("m"), ord("M")):
                     game_engine.state = GameState.MENU
+                    game_engine.audio.play_sfx("click")
                 elif ord("1") <= key <= ord("9"):
                     lvl = key - ord("0")
                     if lvl <= game_engine.save_manager.unlocked_level:
@@ -181,13 +203,16 @@ def run_game() -> None:
                     if 10 <= game_engine.save_manager.unlocked_level:
                         game_engine.start_level_mode(10, current_time)
 
+            # Kontrol saat di Pemilihan Grid
             elif game_engine.state == GameState.GRID_SELECT:
                 if key in (ord("m"), ord("M")):
                     game_engine.state = GameState.MENU
+                    game_engine.audio.play_sfx("click")
                 elif ord("1") <= key <= ord("4"):
                     grid_idx = key - ord("1")
                     game_engine.handle_button_action(f"grid_{grid_idx}", current_time)
 
+            # Kontrol saat Level Berhasil Dituntaskan
             elif game_engine.state == GameState.LEVEL_CLEARED:
                 if key == ord(" "):
                     if game_engine.current_level < 10:
@@ -199,6 +224,7 @@ def run_game() -> None:
                 elif key in (ord("m"), ord("M")):
                     game_engine.state = GameState.MENU
 
+            # Kontrol saat Game Over
             elif game_engine.state == GameState.GAMEOVER:
                 if key in (ord("r"), ord("R")):
                     if game_engine.survival_tracker is not None:
