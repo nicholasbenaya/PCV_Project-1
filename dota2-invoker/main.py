@@ -201,7 +201,7 @@ def main():
                 toast_msg = "KALIBRASI DI-RESET KE DEFAULT UNIVERSAL"
                 toast_timer = 2.5
                 calibration_mode = False
-            elif key in [ord('q'), ord('Q'), 27]:
+            elif key in [27, ord('x'), ord('X')]:
                 calibration_mode = False
 
             cv2.imshow(window_name, frame)
@@ -234,25 +234,37 @@ def main():
         # Tangani Aksi yang Terpicu
         if triggered_action:
             cx, cy = info["features"].get("centroid", (w // 2, h // 2))
+            action_desc = ""
 
             if triggered_action in ["1_FINGER", "SNAKE"]:
                 invoker.add_orb("Q")
-                vfx.trigger_spell_burst(cx, cy, "QUAS (Q)", (255, 210, 80))
+                action_desc = "QUAS (Q)"
+                vfx.trigger_spell_burst(cx, cy, action_desc, (255, 210, 80))
             elif triggered_action in ["2_FINGERS", "CROSS"]:
                 invoker.add_orb("W")
-                vfx.trigger_spell_burst(cx, cy, "WEX (W)", (255, 70, 220))
+                action_desc = "WEX (W)"
+                vfx.trigger_spell_burst(cx, cy, action_desc, (255, 70, 220))
             elif triggered_action in ["3_FINGERS", "TIGER"]:
                 invoker.add_orb("E")
-                vfx.trigger_spell_burst(cx, cy, "EXORT (E)", (40, 100, 255))
+                action_desc = "EXORT (E)"
+                vfx.trigger_spell_burst(cx, cy, action_desc, (40, 100, 255))
             elif triggered_action in ["4_FINGERS", "RAM"]:
                 spell_name, col = invoker.invoke()
-                vfx.trigger_spell_burst(cx, cy, f"INVOKE (R): {spell_name}", col)
+                action_desc = f"INVOKE (R): {spell_name}"
+                vfx.trigger_spell_burst(cx, cy, action_desc, col)
             elif triggered_action in ["5_FINGERS", "OPEN_PALM"]:
                 spell_name, col = invoker.cast_spell_d()
-                vfx.trigger_spell_burst(cx, cy, f"CAST D: {spell_name}!", col)
+                action_desc = f"CAST D: {spell_name}!"
+                vfx.trigger_spell_burst(cx, cy, action_desc, col)
             elif triggered_action in ["FIST", "DUAL_PALM"]:
                 spell_name, col = invoker.cast_spell_f()
-                vfx.trigger_spell_burst(cx, cy, f"CAST F: {spell_name}!", col)
+                action_desc = f"CAST F: {spell_name}!"
+                vfx.trigger_spell_burst(cx, cy, action_desc, col)
+
+            if action_desc:
+                logger.info(f"AKSI TERPICU: {triggered_action} -> {action_desc}")
+                with open(telemetry_path, "a", encoding="utf-8") as tf:
+                    tf.write(f"{time.strftime('%H:%M:%S')} | >>> AKSI TERPICU: {triggered_action:10s} -> {action_desc} <<<\n")
 
         # Render Visual Effects Minimalis
         vfx.update_and_render(frame, info, progress)

@@ -17,6 +17,7 @@ Metodologi:
 import cv2
 import numpy as np
 import time
+from collections import deque, Counter
 from typing import Optional, Tuple, Dict, Any
 
 
@@ -33,12 +34,13 @@ class HandSealDetector:
         self.kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         self.kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
 
-        # Temporal Debounce / Hold state
+        # Temporal Debounce & Majority Voting Buffer
+        self.rolling_history: deque = deque(maxlen=5)
         self.candidate_seal: Optional[str] = None
         self.candidate_frames: int = 0
-        self.required_hold_frames: int = 5  # ~0.16 detik (responsif & minim delay)
+        self.required_hold_frames: int = 4  # ~130ms (sangat responsif & kebal 1-frame jitter)
         self.last_trigger_time: float = 0.0
-        self.cooldown_sec: float = 0.40
+        self.cooldown_sec: float = 0.35
 
         # Custom calibration values
         self.is_calibrated: bool = False
@@ -140,29 +142,43 @@ class HandSealDetector:
         palm_center = (x + max_loc[0], y + max_loc[1])
         palm_radius = float(max_val)
 
-        # 2. Deteksi Ujung Jari Nyata (Fingertips) Berdasarkan Jarak Rasio & NMS
-        # Rasio jari manusia sejati: Ujung jari mencuat > 2.05 * Palm Radius (Knuckle/sudut telapak hanya 1.3 - 1.95x)
-        # Filter Pergelangan Tangan: Pergelangan tangan berada tepat di bawah telapak tangan (|dx| < 1.35 * R dan dy > 0.2 * R).
-        # Jempol yang membuka ke samping (|dx| >= 1.35 * R) BUKAN pergelangan tangan dan harus diterima.
+        # 2. Deteksi Ujung Jari Nyata (Fingertips) Berdasarkan Polar Angle & Jarak Rasio
         candidates = []
         if palm_radius > 15:
             for pt in hull[:, 0]:
-                dist = np.hypot(pt[0] - palm_center[0], pt[1] - palm_center[1])
+                dx = float(pt[0] - palm_center[0])
+                dy = float(pt[1] - palm_center[1])
+                dist = np.hypot(dx, dy)
                 ratio = dist / palm_radius
-                is_wrist = (pt[1] > (palm_center[1] + int(palm_radius * 0.20))) and (abs(pt[0] - palm_center[0]) < int(palm_radius * 1.35))
-                if not is_wrist and ratio > 2.05:
-                    candidates.append((pt, dist))
+                is_wrist = (dy > (palm_radius * 0.20)) and (abs(dx) < (palm_radius * 1.35))
+                # Ambang batas rasio 1.90: mencakup ujung jari yang sedikit miring/foreshortened ke arah kamera
+                if not is_wrist and ratio > 1.90:
+                    angle_deg = float(np.degrees(np.arctan2(dy, dx)))
+                    candidates.append((pt, dist, angle_deg))
 
-        # Urutkan kandidat dari jarak terjauh ke terdekat (puncak tertinggi jari diproses duluan)
+        # Urutkan kandidat dari jarak terjauh ke terdekat (titik puncak jari diproses duluan)
         candidates.sort(key=lambda item: item[1], reverse=True)
 
-        # Non-Maximum Suppression (NMS): Saring titik ganda pada jari yang sama (jarak pisah minimal 54 px)
-        min_tip_dist = max(54.0, palm_radius * 0.90)
-        finger_tips = []
-        for pt, dist in candidates:
-            if not any(np.hypot(pt[0] - p[0], pt[1] - p[1]) < min_tip_dist for p in finger_tips):
-                finger_tips.append(pt)
+        # Polar-Aware NMS:
+        # Titik dianggap duplikat dari jari yang sama jika sudut polar sangat dekat (< 15 derajat)
+        # ATAU jarak Euclidean sangat rapat (< 32 px).
+        # Ini mencegah dua jari berdekatan (seperti telunjuk & tengah) saling menghapus,
+        # sekaligus menghapus titik ganda pada puncak jari yang sama.
+        accepted_tips = []
+        for pt, dist, angle in candidates:
+            duplicate = False
+            for p_acc, _, a_acc in accepted_tips:
+                angle_diff = abs(angle - a_acc)
+                if angle_diff > 180.0:
+                    angle_diff = 360.0 - angle_diff
+                euc = np.hypot(pt[0] - p_acc[0], pt[1] - p_acc[1])
+                if angle_diff < 15.0 or euc < 32.0:
+                    duplicate = True
+                    break
+            if not duplicate:
+                accepted_tips.append((pt, dist, angle))
 
+        finger_tips = [item[0] for item in accepted_tips]
         tip_count = len(finger_tips)
 
         # 3. Analisis Celah Antar Jari (Convexity Defects) dengan Filter Sudut Cosinus
@@ -306,33 +322,58 @@ class HandSealDetector:
             else:
                 seal_name = "NONE"
 
-            # Logika Pemicuan & Debouncing
+            # --- Temporal Filtering (Majority Voting atas 5 Frame Terakhir) ---
             if seal_name not in ["NONE", "UNKNOWN"]:
+                self.rolling_history.append(seal_name)
+            else:
+                self.rolling_history.append("NONE")
+
+            valid_history = [s for s in self.rolling_history if s not in ["NONE", "UNKNOWN"]]
+            if valid_history:
+                pose_counts = Counter(valid_history)
+                smoothed_seal, _ = pose_counts.most_common(1)[0]
+            else:
+                smoothed_seal = "NONE"
+
+            # Tampilkan gestur yang telah distabilkan pada antarmuka
+            if smoothed_seal != "NONE":
+                info["seal"] = smoothed_seal
+
+            # --- Logika Pemicuan dengan Akumulator Leaky Bucket ---
+            # Mengizinkan micro-jitter 1 frame tanpa membatalkan seluruh progres hold meter
+            if smoothed_seal not in ["NONE", "UNKNOWN"]:
                 if (now - self.last_trigger_time) >= self.cooldown_sec:
-                    if self.candidate_seal == seal_name:
+                    if self.candidate_seal == smoothed_seal:
                         self.candidate_frames += 1
                     else:
-                        self.candidate_seal = seal_name
-                        self.candidate_frames = 1
+                        # Pengurangan gradual (decay), bukan wipeout instan
+                        self.candidate_frames = max(0, self.candidate_frames - 1)
+                        if self.candidate_frames == 0:
+                            self.candidate_seal = smoothed_seal
+                            self.candidate_frames = 1
 
                     progress = min(1.0, float(self.candidate_frames) / self.required_hold_frames)
 
                     # Jika pose ditahan stabil hingga mencapai ambang batas frame
                     if self.candidate_frames >= self.required_hold_frames:
-                        triggered_action = seal_name
+                        triggered_action = self.candidate_seal
                         self.last_trigger_time = now
                         self.candidate_frames = 0
                         self.candidate_seal = None
+                        self.rolling_history.clear()
                         progress = 0.0
                 else:
                     progress = 0.0
             else:
-                self.candidate_seal = None
                 self.candidate_frames = max(0, self.candidate_frames - 1)
+                if self.candidate_frames == 0:
+                    self.candidate_seal = None
                 progress = 0.0
         else:
-            self.candidate_seal = None
-            self.candidate_frames = 0
+            self.rolling_history.append("NONE")
+            self.candidate_frames = max(0, self.candidate_frames - 1)
+            if self.candidate_frames == 0:
+                self.candidate_seal = None
             progress = 0.0
 
         return triggered_action, progress, info, mask
