@@ -19,12 +19,21 @@ project-1/
 │   ├── main.py                         # Program Utama (Jendela: "Tugas Game - Dota 2 Invoker")
 │   └── README.md                       # Laporan Teknis Lengkap Tipe 1
 │
-├── custom-minigame/                    # [TIPE 2: Custom Game Buatan Sendiri]
+├── custom-minigame/                    # [TIPE 2: Custom Game Buatan Sendiri - Shinobi Battle]
 │   ├── hand_detector.py                # Modul Deteksi Segel Tangan Responsif Real-Time
 │   ├── entities.py                     # Entitas Pemain, Demon Boss, Proyektil Sihir, & Partikel
 │   ├── game_engine.py                  # Game Engine 2D 60 FPS & Renderer Arena Murni OpenCV
 │   ├── main.py                         # Program Utama (Jendela: "Tugas Game - Shinobi Jutsu Battle")
 │   └── README.md                       # Laporan Teknis Lengkap Tipe 2
+│
+├── whack-a-mole/                       # [TIPE 3: Whack-A-Mole Virtual - Centroid Tracking]
+│   ├── config.py                       # Parameter Segmentasi HSV, Kamera, dan Gameplay
+│   ├── hand_tracker.py                 # Segmentasi Kulit HSV & Spatial Moments Centroid (EMA)
+│   ├── entities.py                     # Entitas Mole, Hole 2x3, HitEffect, & ScoreManager
+│   ├── ui_renderer.py                  # HUD Semi-Transparan, Mole Kartun, & PiP Mask View
+│   ├── game_engine.py                  # State Machine (START, PLAYING, GAMEOVER) & Hit Detection
+│   ├── main.py                         # Program Utama (Jendela: "Tugas Game - Whack-A-Mole Virtual")
+│   └── README.md                       # Laporan Teknis Lengkap Tipe 3
 │
 ├── requirements.txt                    # opencv-python & numpy
 ├── .gitignore
@@ -33,7 +42,7 @@ project-1/
 
 ---
 
-## 🎮 Ringkasan Kedua Tipe Game
+## 🎮 Ringkasan Tipe Game
 
 ### 1. Tipe 1: Dota 2 Invoker Hand Pose Controller (`dota2-invoker/`)
 * **Konsep**: Mengontrol perapalan mantra hero Invoker di game Dota 2 secara *hands-free* menggunakan **Penghitungan Jari & Gestur Tangan (Convexity Defects & Geometry)**.
@@ -65,6 +74,20 @@ project-1/
   python custom-minigame/main.py
   ```
 * 📄 **Laporan Lengkap**: [Baca README Custom Mini-Game](custom-minigame/README.md)
+
+---
+
+### 3. Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`)
+* **Konsep**: Game interaktif arcade memukul karakter "mole" yang muncul secara acak di salah satu dari 6 lubang target (grid 2x3) di atas feed webcam cermin secara *real-time*.
+* **Mekanik Permainan**:
+  * **Pelacakan Centroid Tangan**: Segmentasi warna kulit HSV dual-range dan momen spasial $cX = m_{10}/m_{00}, cY = m_{01}/m_{00}$ dengan stabilisasi EMA smoothing.
+  * **Deteksi Tabrakan (Hit Detection)**: Jarak Euclidean ke pusat mole aktif dengan jeda *debounce cooldown* 0,4 detik.
+  * **Visual & Efek**: Timer radial mole, HUD skor & countdown 30s, animasi ledakan `+1 HIT!`, serta fitur PiP Mask View (`M`).
+* **Eksekusi**:
+  ```bash
+  python whack-a-mole/main.py
+  ```
+* 📄 **Laporan Lengkap**: [Baca README Whack-A-Mole](whack-a-mole/README.md)
 
 ---
 
