@@ -78,7 +78,15 @@ def main():
     zone_idx = 0  # Default Tangan Kanan: Sisi kiri frame (tempat kepala/badan) diabaikan 100%
     hand_zone = zone_presets[zone_idx][1]
 
-    toast_msg = "HAND ZONE: TANGAN KANAN AKTIF [H: Ganti Sisi]"
+    # Status Live Diagnostik & Telemetri
+    show_debug = True
+    telemetry_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live_telemetry.log")
+    with open(telemetry_path, "w", encoding="utf-8") as tf:
+        tf.write(f"=== SESI TESTING LIVE TELEMETRI DIMULAI PADA {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    last_telemetry_time = 0.0
+    last_logged_seal = "NONE"
+
+    toast_msg = "HAND ZONE: TANGAN KANAN AKTIF [H: Ganti Sisi | TAB: Debug]"
     toast_timer = 3.5
     fps_time = time.time()
     fps = 0.0
@@ -279,6 +287,43 @@ def main():
         current_seal = info.get("seal", "NONE")
         invoker.render_dota_hud(frame, current_seal, progress)
 
+        # Panel Live Diagnostik Real-Time (TAB untuk Toggle On/Off)
+        if show_debug:
+            dbg_w, dbg_h = 330, 115
+            dbg_x, dbg_y = 15, 60
+            dbg_bg = frame[dbg_y:dbg_y+dbg_h, dbg_x:dbg_x+dbg_w].copy()
+            cv2.rectangle(dbg_bg, (0, 0), (dbg_w, dbg_h), (12, 16, 24), -1)
+            cv2.addWeighted(dbg_bg, 0.82, frame[dbg_y:dbg_y+dbg_h, dbg_x:dbg_x+dbg_w], 0.18, 0, frame[dbg_y:dbg_y+dbg_h, dbg_x:dbg_x+dbg_w])
+            cv2.rectangle(frame, (dbg_x, dbg_y), (dbg_x+dbg_w, dbg_y+dbg_h), (0, 220, 255), 1)
+
+            feats = info.get("features", {})
+            t_cnt = feats.get("tip_count", 0)
+            d_cnt = feats.get("defect_count", 0)
+            c_area = int(feats.get("area", 0))
+
+            cv2.putText(frame, "LIVE DIAGNOSTIK [TAB: Toggle]", (dbg_x + 10, dbg_y + 20),
+                        cv2.FONT_HERSHEY_DUPLEX, 0.44, (0, 230, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, f"Pose Terbaca : {current_seal}", (dbg_x + 10, dbg_y + 42),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, f"Ujung Jari   : {t_cnt} JARI (Celah: {d_cnt})", (dbg_x + 10, dbg_y + 64),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (180, 240, 180), 1, cv2.LINE_AA)
+            cv2.putText(frame, f"Hold Meter   : {int(progress * 100)}% ({detector.candidate_frames}/{detector.required_hold_frames})", (dbg_x + 10, dbg_y + 86),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (100, 220, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, f"Luas Kontur  : {c_area} px", (dbg_x + 10, dbg_y + 106),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (160, 170, 190), 1, cv2.LINE_AA)
+
+        # Rekam Log Telemetri Real-Time (untuk pemantauan langsung)
+        now_sec = time.time()
+        if (current_seal != last_logged_seal) or (current_seal != "NONE" and now_sec - last_telemetry_time >= 0.40):
+            last_logged_seal = current_seal
+            last_telemetry_time = now_sec
+            feats = info.get("features", {})
+            log_line = (f"{time.strftime('%H:%M:%S')} | Pose: {current_seal:10s} | "
+                        f"Tips: {feats.get('tip_count', 0)} | Defects: {feats.get('defect_count', 0)} | "
+                        f"Progress: {int(progress * 100):3d}% | Area: {int(feats.get('area', 0))} px\n")
+            with open(telemetry_path, "a", encoding="utf-8") as tf:
+                tf.write(log_line)
+
         # Header Info & Shortcut Bar di bagian atas (Bersih & Rapi)
         top_bar_h = 42
         cv2.rectangle(frame, (0, 0), (w, top_bar_h), (18, 20, 28), -1)
@@ -289,7 +334,7 @@ def main():
 
         cv2.putText(frame, f"PCV INVOKER | FPS: {fps:.1f}", (15, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.52, (230, 230, 240), 1, cv2.LINE_AA)
-        cv2.putText(frame, "[C] Kalibrasi  [H] Ganti Sisi Tangan  [Z] Hand Zone  [I] DirectInput  [M] Mask  [O] Orbs  [ESC] Keluar", (185, 26),
+        cv2.putText(frame, "[C] Kalibrasi  [H] Sisi Tangan  [TAB] Live Debug  [Z] Hand Zone  [I] Input  [ESC] Keluar", (185, 26),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 190, 210), 1, cv2.LINE_AA)
         cv2.putText(frame, f"INPUT: {input_status} [I]", (w - 225, 26),
                     cv2.FONT_HERSHEY_DUPLEX, 0.50, status_color, 1, cv2.LINE_AA)
@@ -326,6 +371,11 @@ def main():
         if key in [27, ord('x'), ord('X')]:  # Keluar HANYA dengan tombol ESC atau X
             logger.info("Pengguna menekan ESC/X untuk keluar.")
             break
+        elif key in [9, ord('\t')]:  # TAB untuk Toggle Panel Live Diagnostik
+            show_debug = not show_debug
+            toast_msg = f"LIVE DIAGNOSTIK: {'AKTIF' if show_debug else 'NONAKTIF'}"
+            toast_timer = 2.0
+            logger.info(f"Live debug HUD: {show_debug}")
         elif key in [ord('c'), ord('C')]:
             calibration_mode = True
         elif key in [ord('h'), ord('H')]:  # H untuk Ganti Sisi Tangan (Kanan / Kiri / Bebas)

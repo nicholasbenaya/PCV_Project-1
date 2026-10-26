@@ -223,31 +223,26 @@ class HandSealDetector:
             "centroid": palm_center  # Gunakan palm center sebagai titik pusat stabil
         }
 
-        # --- Klasifikasi Presisi Tinggi (Dual-Check: Tip Count + Defect Validation Anti-Wajah) ---
-        # Filter Anti-Wajah: Wajah/rambut yang bergelombang bisa memiliki 2-5 titik hull jauh,
-        # tetapi TIDAK memiliki celah lembah dalam (defect_count == 0). Jari tangan asli (2 s.d. 5 jari)
-        # secara anatomis WAJIB memiliki celah lembah yang memisahkan antar jari.
-        if tip_count >= 2 and defect_count == 0 and solidity >= 0.82:
-            return "NONE", 0.0, {}
-        if tip_count >= 3 and defect_count == 0:
+        # --- Klasifikasi Presisi & Responsif (Direct Tip Count Mapping) ---
+        # Filter Anti-Wajah: Wajah bulat pejal tanpa celah lekukan jari
+        if tip_count >= 2 and defect_count == 0 and solidity >= 0.85:
             return "NONE", 0.0, {}
 
         confidence = 0.95
-        # 5 Jari: 5 ujung jari terdeteksi, ATAU 4 jari dengan telapak tangan lebar dan celah jari >= 3
         if tip_count >= 5 or (tip_count == 4 and aspect_ratio <= 1.34 and defect_count >= 3):
             detected_seal = "5_FINGERS"   # 5 Jari (Telapak Terbuka) -> Quick Cast Slot 1 (D)
         elif tip_count == 4:
-            detected_seal = "4_FINGERS"   # 4 Jari (Jempol Tertekuk, Ramping) -> Invoke (R)
+            detected_seal = "4_FINGERS"   # 4 Jari -> Invoke (R)
         elif tip_count == 3:
             detected_seal = "3_FINGERS"   # 3 Jari -> Exort (E)
-        elif tip_count == 2 and (defect_count >= 1 or solidity < 0.82):
+        elif tip_count == 2:
             detected_seal = "2_FINGERS"   # 2 Jari -> Wex (W)
-        elif tip_count == 1 and top_ratio <= 0.44:
+        elif tip_count == 1:
             detected_seal = "1_FINGER"    # 1 Jari -> Quas (Q)
-        elif tip_count == 0 and solidity >= 0.70 and area <= 28000 and aspect_ratio < 1.40:
+        elif tip_count == 0 and area >= 5000:
             detected_seal = "FIST"        # 0 Jari (Kepal) -> Quick Cast Slot 2 (F)
         else:
-            detected_seal = "NONE"        # Bukan tangan valid (abaikan wajah/torso)
+            detected_seal = "NONE"
 
         return detected_seal, confidence, features
 
