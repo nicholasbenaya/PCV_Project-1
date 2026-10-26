@@ -14,7 +14,6 @@ try:
         HIT_DEBOUNCE_COOLDOWN,
         HIT_EFFECT_DURATION,
         LEVEL_CONFIGS,
-        ZONE_PRESETS,
         LevelConfig,
     )
     from .entities import (
@@ -37,7 +36,6 @@ except ImportError:
         HIT_DEBOUNCE_COOLDOWN,
         HIT_EFFECT_DURATION,
         LEVEL_CONFIGS,
-        ZONE_PRESETS,
         LevelConfig,
     )
     from entities import (
@@ -67,7 +65,7 @@ class GameState(Enum):
 
 
 class GameEngine:
-    """Mesin pengontrol alur permainan, logika tabrakan gestur FIST, dan integrasi audio."""
+    """Mesin pengontrol alur permainan pada layar penuh (Full Screen) tanpa Safe Zone statis."""
 
     def __init__(
         self,
@@ -83,10 +81,6 @@ class GameEngine:
         self.score_manager = ScoreManager()
 
         self.state: GameState = GameState.MENU
-
-        # Preset zona partisi (Playing Section vs Non-Playing Safe Zone)
-        self.zone_index: int = 0
-        self.active_zone: Dict = ZONE_PRESETS[self.zone_index]
 
         # Konfigurasi grid lubang
         self.selected_grid_idx = self.save_manager.selected_grid_index
@@ -111,38 +105,27 @@ class GameEngine:
         self.grid_buttons: List[InteractiveButton] = []
         self._rebuild_all_buttons()
 
-    def switch_zone(self) -> str:
-        """Mengganti orientasi Playing Section (Kanan, Kiri, atau Bawah)."""
-        self.zone_index = (self.zone_index + 1) % len(ZONE_PRESETS)
-        self.active_zone = ZONE_PRESETS[self.zone_index]
-        self._rebuild_holes()
-        self._rebuild_all_buttons()
-        return self.active_zone["name"]
-
     def get_calibration_box(self) -> Tuple[int, int, int, int]:
-        """Menghitung kotak area target kalibrasi di tengah Playing Section."""
-        px1, py1, px2, py2 = self.active_zone["play_rect"]
+        """Menghitung kotak area target kalibrasi di tengah layar penuh."""
         box_size = 220
-        cx = (px1 + px2) // 2
-        cy = (py1 + py2) // 2
+        cx = self.frame_width // 2
+        cy = self.frame_height // 2
         return (cx - box_size // 2, cy - box_size // 2, cx + box_size // 2, cy + box_size // 2)
 
     def _rebuild_holes(self) -> None:
-        """Menghitung ulang posisi lubang di dalam Playing Section."""
+        """Menghitung ulang posisi lubang di seluruh arena layar penuh."""
         rows, cols = GRID_PRESETS[self.selected_grid_idx]
-        px1, py1, px2, py2 = self.active_zone["play_rect"]
-        pw = px2 - px1
-        ph = py2 - py1
+        w, h = self.frame_width, self.frame_height
 
-        top_margin = py1 + int(ph * 0.22)
-        bottom_margin = py1 + int(ph * 0.88)
-        left_margin = px1 + int(pw * 0.12)
-        right_margin = px1 + int(pw * 0.88)
+        top_margin = int(h * 0.22)
+        bottom_margin = int(h * 0.86)
+        left_margin = int(w * 0.15)
+        right_margin = int(w * 0.85)
 
         step_x = (right_margin - left_margin) // (cols - 1) if cols > 1 else 0
         step_y = (bottom_margin - top_margin) // (rows - 1) if rows > 1 else 0
 
-        base_radius = int(min(pw, ph) * (0.12 if max(rows, cols) <= 3 else 0.085))
+        base_radius = int(min(w, h) * (0.12 if max(rows, cols) <= 3 else 0.085))
 
         self.holes.clear()
         idx = 0
@@ -154,16 +137,15 @@ class GameEngine:
                 idx += 1
 
     def _rebuild_all_buttons(self) -> None:
-        """Membangun layout tombol interaktif di dalam Playing Section."""
-        px1, py1, px2, py2 = self.active_zone["play_rect"]
-        pw = px2 - px1
+        """Membangun layout tombol interaktif di tengah layar penuh."""
+        w, h = self.frame_width, self.frame_height
 
-        # 1. Tombol Menu Utama (6 tombol)
+        # 1. Tombol Menu Utama (6 tombol di tengah layar)
         self.menu_buttons.clear()
-        btn_w = min(int(pw * 0.78), 580)
-        btn_h = 46
-        bx1 = px1 + (pw - btn_w) // 2
-        start_y = py1 + 205
+        btn_w = min(int(w * 0.52), 600)
+        btn_h = 48
+        bx1 = (w - btn_w) // 2
+        start_y = 175
         spacing = 58
 
         menu_items = [
@@ -188,12 +170,12 @@ class GameEngine:
 
         # 2. Tombol Level Select (2 baris x 5 kolom)
         self.level_buttons.clear()
-        lvl_w = min(int(pw * 0.16), 120)
-        lvl_h = 62
-        margin_x = px1 + int(pw * 0.06)
-        step_lx = (pw - 2 * int(pw * 0.06) - 5 * lvl_w) // 4 + lvl_w
-        start_ly = py1 + 180
-        step_ly = 90
+        lvl_w = min(int(w * 0.14), 140)
+        lvl_h = 68
+        margin_x = int(w * 0.12)
+        step_lx = (w - 2 * margin_x - 5 * lvl_w) // 4 + lvl_w
+        start_ly = 170
+        step_ly = 100
 
         for lvl in range(1, 11):
             row = 0 if lvl <= 5 else 1
@@ -215,8 +197,8 @@ class GameEngine:
         # Tombol kembali di Level Select
         back_w = 260
         back_h = 46
-        back_x1 = px1 + (pw - back_w) // 2
-        back_y1 = py2 - 80
+        back_x1 = (w - back_w) // 2
+        back_y1 = h - 85
         self.level_buttons.append(
             InteractiveButton(
                 rect=(back_x1, back_y1, back_x1 + back_w, back_y1 + back_h),
@@ -228,11 +210,11 @@ class GameEngine:
 
         # 3. Tombol Grid Select (4 Kartu)
         self.grid_buttons.clear()
-        gw = min(int(pw * 0.78), 580)
-        gh = 56
-        gx1 = px1 + (pw - gw) // 2
-        start_gy = py1 + 170
-        step_gy = 72
+        gw = min(int(w * 0.54), 620)
+        gh = 58
+        gx1 = (w - gw) // 2
+        start_gy = 165
+        step_gy = 75
 
         grid_labels = [
             ("GRID 2 x 2  (4 Lubang - Pemula)", "grid_0", "[1]"),
@@ -252,7 +234,6 @@ class GameEngine:
                 )
             )
 
-        # Tombol kembali di Grid Select
         self.grid_buttons.append(
             InteractiveButton(
                 rect=(back_x1, back_y1, back_x1 + back_w, back_y1 + back_h),
@@ -430,8 +411,7 @@ class GameEngine:
                         speed_max,
                     )
 
-            # AKSI PUKUL (WHACK!): HANYA dieksekusi jika tangan berpose FIST (Kepal)!
-            # Jika tangan berpose HIGH_FIVE (Open Palm), kursor hanya membidik / move.
+            # PUKULAN (WHACK!): HANYA dieksekusi jika tangan berpose FIST
             if hand_result.is_detected and hand_result.is_fist and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
@@ -495,7 +475,6 @@ class GameEngine:
                         cfg.mole_max_lifespan,
                     )
 
-            # AKSI PUKUL (WHACK!): Wajib berpose FIST
             if hand_result.is_detected and hand_result.is_fist and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
@@ -536,13 +515,7 @@ class GameEngine:
         current_time: float,
         show_pip_diagnostic: bool = False,
     ) -> None:
-        """Merender seluruh lapisan antarmuka grafis ke frame kamera."""
-        # 1. Gambar partisi Dual-Section (Playing Section vs Non-Playing Safe Zone)
-        self.renderer.draw_sections_overlay(frame, self.active_zone)
-
-        play_rect = self.active_zone["play_rect"]
-
-        # 2. Render elemen spesifik tiap GameState
+        """Merender seluruh lapisan antarmuka grafis ke frame kamera pada layar penuh."""
         if self.state == GameState.MENU:
             rows, cols = GRID_PRESETS[self.selected_grid_idx]
             grid_desc = f"{rows}x{cols} ({rows * cols} Lubang)"
@@ -556,7 +529,8 @@ class GameEngine:
                 unlocked_level=self.save_manager.unlocked_level,
                 preset_name=hand_result.preset_name,
                 current_pose=hand_result.pose,
-                play_rect=play_rect,
+                is_locked=hand_result.is_locked,
+                bg_captured=hand_result.bg_captured,
                 current_time=current_time,
             )
 
@@ -575,7 +549,6 @@ class GameEngine:
                 self.level_buttons,
                 unlocked_level=self.save_manager.unlocked_level,
                 high_scores=self.save_manager.level_high_scores,
-                play_rect=play_rect,
                 current_time=current_time,
             )
 
@@ -584,7 +557,6 @@ class GameEngine:
                 frame,
                 self.grid_buttons,
                 selected_index=self.selected_grid_idx,
-                play_rect=play_rect,
                 current_time=current_time,
             )
 
@@ -599,7 +571,7 @@ class GameEngine:
                 self.save_manager.survival_high_score,
                 hand_result.is_detected,
                 current_pose=hand_result.pose,
-                play_rect=play_rect,
+                is_locked=hand_result.is_locked,
                 current_time=current_time,
             )
 
@@ -620,7 +592,7 @@ class GameEngine:
                 best,
                 hand_result.is_detected,
                 current_pose=hand_result.pose,
-                play_rect=play_rect,
+                is_locked=hand_result.is_locked,
             )
 
         elif self.state == GameState.LEVEL_CLEARED:
@@ -642,7 +614,7 @@ class GameEngine:
                 (0, 255, 120),
                 lines,
                 action_prompt,
-                secondary_prompt="[R] Main Ulang Level Ini  |  [M] / [ESC] Menu Utama",
+                secondary_prompt="[R] Main Ulang Level Ini  |  [ESC] Menu Utama",
             )
 
         elif self.state == GameState.GAMEOVER:
@@ -670,10 +642,10 @@ class GameEngine:
                 (0, 0, 240),
                 lines,
                 "Tekan [R] untuk Coba Lagi",
-                secondary_prompt="[M] / [ESC] Kembali ke Menu Utama",
+                secondary_prompt="[ESC] Kembali ke Menu Utama",
             )
 
-        # 3. Gambar kursor tangan cerdas (membedakan HIGH_FIVE dan FIST)
+        # 3. Gambar kursor tangan cerdas
         self.renderer.draw_hand_cursor(frame, hand_result)
 
         # 4. Jendela PiP Diagnostik Fitur Bentuk PCV (Convex Hull, Defek, Solidity, Pose)

@@ -1,6 +1,6 @@
 # Status Terkini Proyek: PCV Project 1 (Praktikum Pengolahan Citra & Visi Komputer)
 
-**Terakhir Diperbarui**: 27 Oktober 2026, 05:15 WIB  
+**Terakhir Diperbarui**: 27 Oktober 2026, 05:45 WIB  
 **Repositori**: [`https://github.com/nicholasbenaya/PCV_Project-1`](https://github.com/nicholasbenaya/PCV_Project-1)  
 **Cabang Aktif**: `main`  
 **Lingkungan**: Python 3.12, OpenCV 5.0 / 4.x, NumPy, Pygame (Audio Sintetis)  
@@ -9,7 +9,7 @@
 
 ## 1. Ikhtisar Portofolio Proyek (3 Sub-Modul)
 
-Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (*No MediaPipe, No YOLO, No Deep Learning*):
+Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100% Bebas Model Pembelajaran / Tanpa MediaPipe / Tanpa DNN / Tanpa Haar Cascade XML**):
 
 1. **Tipe 1: Dota 2 Invoker Controller (`dota2-invoker/`)**  
    - Kontrol perapalan mantra hero Invoker langsung ke game Dota 2 via Windows API DirectInput (`SendInput`).
@@ -17,57 +17,51 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (*No M
 2. **Tipe 2: Shinobi Jutsu Battle Mini-Game (`custom-minigame/`)**  
    - Game pertarungan sihir 2D murni OpenCV melawan *Demon Boss Susanoo*.
    - Klasifikasi 5 segel tangan (*Tiger, Snake, Cross, Ram, Open Palm*) berbasis *convexity defects*, rasio puncak 15%, dan *solidity*.
-3. **Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`) [UPGRADED]**  
-   - Game arcade memukul mole di atas canvas HD widescreen ($1280 \times 720$).
-   - Dilengkapi sistem **Hand Pose Classification** (HIGH_FIVE move vs FIST whack), **Cursor Freeze Damping**, **Auto Face Blackout**, **PiP Diagnostik Fitur Bentuk PCV**, **3 Mode Segmentasi**, **Progression Level 1-10**, **Survival Mode**, dan **Audio Sintetis Adaptif**.
+3. **Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`) [UPGRADED 4 PILAR PCD KLASIK]**  
+   - Game arcade memukul mole di atas canvas layar penuh HD ($1280 \times 720$) tanpa batasan Safe Area / partisi statis.
+   - Mengintegrasikan **4 Pilar PCD Klasik**:
+     1. **Background Subtraction Berbasis Referensi (Tombol `[B]`)** via `cv2.absdiff()`.
+     2. **Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)** berbasis lubang internal mata/mulut.
+     3. **Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Spatial Tracking** (mencegah pembajakan kursor oleh kepala atau objek lain).
+     4. **Sistem Klasifikasi 2 Hand Pose (HIGH_FIVE move vs FIST whack)** dengan **Cursor Position Freeze Damping**.
+   - Dilengkapi jendela **PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)**, **Progression Level 1-10**, **Survival Mode**, dan **Audio Sintetis Adaptif**.
 
 ---
 
-## 2. Rincian Teknis Whack-A-Mole (Tipe 3) Pasca Upgrade
+## 2. Rincian Teknis Whack-A-Mole (Tipe 3) Pasca Upgrade 4 Pilar PCD
 
-### A. Sistem Klasifikasi 2 Hand Pose
-- **Fitur Ekstraksi Citra**:
-  - *Contour Area* ($A$) & *Convex Hull Area* ($A_{\text{hull}}$).
-  - *Solidity*: $S = A / A_{\text{hull}}$.
-  - *Bounding Box Aspect Ratio*: $AR = w / h$.
-  - *Valid Convexity Defects*: Titik terdalam celah antar jari yang memenuhi kedalaman $d > 0.10 \times \min(w, h)$ dan sudut celah $\theta < 90^{\circ}$.
-- **Aturan Klasifikasi**:
-  - **`HIGH_FIVE` (Open Palm / Telapak Terbuka)**:
-    - Terdeteksi jika $\text{Defects} \ge 3$ ATAU $S < 0.78$.
-    - **Fungsi**: Membidik / mengarahkan kursor di layar. Tidak dapat memukul mole dan tidak dapat mengeklik tombol menu.
-  - **`FIST` (Kepal / Clenched Hand)**:
-    - Terdeteksi jika $\text{Defects} \le 1$ DAN $S > 0.83$ DAN $0.60 \le AR \le 1.40$.
-    - **Fungsi**: Mengeksekusi aksi pukulan (**WHACK!**) pada mole atau mengeklik tombol menu yang sedang di-hover.
-- **Temporal Smoothing Buffer**:
-  - Menggunakan rolling buffer 5 frame dengan *majority voting* (`Counter.most_common`) untuk mencegah flickering saat tangan bergerak.
+### A. Pilar 1: Background Subtraction Berbasis Referensi (Tombol `[B]`)
+- Pemain merekam frame referensi latar belakang saat duduk di depan webcam dengan menekan tombol `[B]`.
+- Sistem menghitung selisih absolut `cv2.absdiff(gray_frame, bg_gray) > 25` untuk menghasilkan masker foreground gerakan.
+- Operasi `cv2.bitwise_and(color_mask, fg_mask)` otomatis mengeliminasi dinding kamar, meja kayu, dan torso pemain yang diam.
 
-### B. Cursor Freeze / Damping Stabilizer
-- Saat pemain mengepalkan tangan (`HIGH_FIVE` $\to$ `FIST`), kontur tangan menyusut dan titik centroid kerap bergeser ke bawah/belakang sebesar 20–60 piksel.
-- Sistem membekukan (*freeze*) koordinat kursor ke posisi stabil telapak tangan terakhir selama jendela waktu $0.35\text{ detik}$, sehingga pukulan/klik tetap akurat mengenai lubang mole atau tombol yang dibidik.
+### B. Pilar 2: Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)
+- Tanpa model learning / XML classifier, sistem membedakan wajah dari tangan menggunakan analisis lubang internal kontur.
+- Kontur dicari dengan mode `cv2.RETR_CCOMP` pada masker sebelum morphological closing besar.
+- Menghitung jumlah child contour internal dengan luas $\ge 25\text{ px}$. Karena wajah memiliki mata, alis, dan mulut yang menghasilkan $\ge 3$ lubang internal, kontur dengan $\ge 3$ lubang dan defek celah jari $< 2$ **otomatis ditolak sebagai wajah**.
 
-### C. Ketahanan Segmentasi & Anti-Face Hijacking
-- **Auto Face Blackout**:
-  - Memindai wajah pemain menggunakan Haar Cascade (`haarcascade_frontalface_default.xml`).
-  - Area wajah beserta margin leher ke bawah otomatis dinolkan pada masker biner ($M_{\text{face}} = 0$).
-  - Dilengkapi *fallback* partisi spasial jika modul classifier tidak tersedia.
-- **Dual-Section Partition**:
-  - *Playing Section*: Area aktif target dan pelacakan tangan.
-  - *Non-Playing Safe Zone*: Area kepala/tubuh pemain yang dinolkan secara fisik. Dapat ditukar orientasinya (Kanan/Kiri/Bawah) dengan tombol `[H]` atau `[TAB]`.
-- **3 Preset Mode Segmentasi (Tombol `[M]`)**:
-  1. `Skin (YCrCb + HSV)`: Segmentasi multi-ruang warna kulit manusia dengan adaptasi pencahayaan.
-  2. `Black Glove`: Thresholding kontras tinggi untuk sarung tangan hitam pada latar terang.
-  3. `High-Contrast Object`: Backup objek warna solid (misal bola/kain biru/merah) untuk kondisi ruangan darurat.
-- **Kalibrasi Cepat (Tombol `[C]`)**:
-  - Mengambil sampel $\mu$ dan $\sigma$ dari kotak target di layar, menghitung ulang batas lower/upper masker, dan menyimpannya permanen di `save_data.json`.
+### C. Pilar 3: Open-Palm Lock-On & Nearest-Neighbor Tracking
+- **State Belum Terkunci (`is_hand_locked == False`)**:
+  - Sistem HANYA mengunci kontur yang memenuhi syarat telapak tangan terbuka (*HIGH_FIVE*) secara ketat:
+    $$\text{Valid Defects} \ge 3 \quad (\text{sudut } \theta < 85^{\circ}) \quad \land \quad \text{Solidity} \le 0.82$$
+  - Wajah atau benda bulat tidak akan pernah lolos syarat ini. Begitu ditemukan, sistem mengaktifkan lock-on dan menyimpan posisi centroid $(cX, cY)$.
+- **State Terkunci (`is_hand_locked == True`)**:
+  - Pada frame berikutnya, sistem melacak kontur kandidat terdekat dari posisi terakhir (jarak Euclidean $\le 160\text{ px}$).
+  - Ketika tangan berubah dari telapak terbuka menjadi kepalan tangan (*FIST*), posisi kepalan berada di koordinat yang sama ($d < 60\text{ px}$), sehingga kepalan tetap terlacak dengan stabil tanpa melompat ke kepala.
+  - Jika tangan ditarik keluar dari layar selama $> 16\text{ frame}$, kunci dilepas otomatis dan sistem kembali ke mode pencarian Open Palm.
 
-### D. Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)
+### D. Pilar 4: Ekstraksi Fitur Geometri Bentuk, Pose, & Cursor Freeze
+- `HIGH_FIVE` (Open Palm): Berfungsi mengarahkan kursor bidikan di layar. Kursor berwarna hijau terbuka dengan label `"MOVE (OPEN)"`. Tidak memukul mole dan tidak memilih menu.
+- `FIST` (Kepalan Tangan): Berfungsi memukul mole (**WHACK!**) atau mengeklik tombol menu. Kursor berwarna merah pekat dengan efek impak dan label `"WHACK! (FIST)"`.
+- **Cursor Freeze Damping**: Saat mengepalkan tangan, posisi kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$, menjamin pukulan tetap akurat mengenai lubang mole atau tombol yang dibidik.
+
+### E. Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)
 - Menampilkan jendela Picture-in-Picture di pojok layar beresolusi $280 \times 210\text{ px}$ yang memvisualisasikan:
-  1. Masker biner segmentasi terkini.
+  1. Masker biner segmentasi aktif.
   2. Garis kontur tangan asli (kuning).
-  3. Garis poligon **Convex Hull** (hijau neon).
+  3. Garis poligon **Convex Hull** (hijau tebal).
   4. Titik **Convexity Defects** (lingkaran merah/kuning).
-  5. Metrik nilai: *Pose Status, Defect Count, Solidity, Aspect Ratio, dan Mode Aktif*.
-  - Sangat krusial untuk diperlihatkan ke dosen/asisten penguji saat sesi demo pembuktian algoritma PCV.
+  5. Metrik nilai: *Lock Status, BG Sub Status, Defect Count, Internal Holes, Solidity, Aspect Ratio, dan Status Pose*.
 
 ---
 
@@ -75,14 +69,14 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (*No M
 
 | Berkas | Peran dan Tanggung Jawab |
 | :--- | :--- |
-| [`config.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/config.py) | Definisi resolusi HD 1280x720, batas HSV/YCrCb, konstanta pose (HIGH_FIVE/FIST), 10 level, 3 preset mode. |
-| [`hand_tracker.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/hand_tracker.py) | Segmentasi, Auto Face Blackout, ekstraksi Convex Hull & Defects, Solidity, Pose Voting, dan Cursor Freeze. |
+| [`config.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/config.py) | Parameter Full Screen HD 1280x720, threshold defek (<85 deg), lock-on radius (160 px), 3 preset mode, 10 level. |
+| [`hand_tracker.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/hand_tracker.py) | Implementasi 4 Pilar PCD: BG Subtraction absdiff, RETR_CCOMP face hole rejection, Open-Palm Lock-On, Nearest-Neighbor, dan Cursor Freeze. |
 | [`entities.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/entities.py) | Entitas Hole, Mole, HitEffect, ScoreManager, SurvivalTracker, dan InteractiveButton dengan FIST trigger. |
-| [`game_engine.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/game_engine.py) | State Machine (Menu, Level Select, Grid Select, Kalibrasi, Survival, Level Mode, GameOver), validasi hit FIST. |
-| [`ui_renderer.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/ui_renderer.py) | Kursor dinamis (Hijau MOVE vs Merah WHACK), PiP Diagnostik Fitur Bentuk PCV, HUD survival/level, kartu menu. |
+| [`game_engine.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/game_engine.py) | State Machine (Menu, Level Select, Grid Select, Kalibrasi, Survival, Level Mode, GameOver), validasi hit FIST pada layar penuh. |
+| [`ui_renderer.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/ui_renderer.py) | Full Screen HUD, kursor dinamis (Hijau MOVE vs Merah WHACK), PiP Diagnostik Fitur Bentuk PCV, banner lock-on. |
 | [`audio_system.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/audio_system.py) | Generator audio sintetis NumPy stereo (click, bonk, miss, clear, game over) dan loop BGM 4-tier. |
 | [`save_manager.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/save_manager.py) | Persistensi data JSON (level unlock 1-10, skor survival, kalibrasi warna, grid terpilih). |
-| [`main.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/main.py) | Entry point game loop, penanganan hotkey (`C`, `M`, `V`, `H`, `S`, `ESC`), dan integrasi perangkat webcam. |
+| [`main.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/main.py) | Entry point game loop, penanganan hotkey (`B`, `V`, `M`, `C`, `S`, `ESC`), dan integrasi perangkat webcam. |
 
 ---
 
@@ -95,26 +89,26 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (*No M
 ### Kontrol Keyboard Lengkap:
 | Tombol | Fungsi |
 | :--- | :--- |
-| **`V` / `P`** | Toggle jendela PiP Diagnostik Fitur Bentuk PCV (Convex Hull, Defek, Solidity, Pose) |
+| **`B`** | **Merekam Frame Referensi Latar Belakang** (*Background Subtraction*) |
+| **`V` / `P`** | Toggle jendela **PiP Diagnostik Fitur Bentuk PCV** (Hull, Defek, Solidity, Pose) |
 | **`M`** | Berganti Preset Segmentasi (`Skin` $\to$ `Black Glove` $\to$ `High-Contrast Object`) |
 | **`C`** | Masuk Mode Kalibrasi Cepat / Ambil sampel warna kulit |
-| **`H` / `TAB`** | Ganti Sisi Playing Section (Kanan, Kiri, Bawah) |
-| **`S`** | Menyalakan / mematikan suara (*Mute Audio*) |
+| **`S`** | Menyalakan / mematikan audio sintetis (*Mute Audio*) |
 | **`1` - `6`** | Memilih menu utama via keyboard |
 | **`1` - `0`** | Memilih level 1 s.d. 10 pada layar Level Select |
 | **`1` - `4`** | Memilih ukuran grid pada layar Grid Select |
 | **`R`** | Restart sesi permainan saat Game Over / Level Cleared |
-| **`SPASI`** | Kunci kalibrasi / Lanjut ke level berikutnya saat Level Cleared |
+| **`SPASI`** | Lanjut ke level berikutnya saat Level Cleared |
 | **`ESC`** | Kembali ke Menu Utama dari layar mana pun / Keluar permainan |
 
 ---
 
 ## 5. Status Verifikasi Pengujian
 
-- [x] Deteksi cacat kecembungan (*Convexity Defects*) terverifikasi akurat menghitung celah antar jari.
-- [x] Klasifikasi pose `HIGH_FIVE` dan `FIST` terverifikasi konvergen stabil via voting buffer 5 frame.
-- [x] Mekanisme *Cursor Freeze Damping* terverifikasi mencegah pergeseran kursor saat kepalan tangan dibuat.
-- [x] *Auto Face Blackout* terintegrasi menghapus derau wajah dan leher dari masker biner.
-- [x] Mode interaksi: `HIGH_FIVE` membidik tanpa memukul, `FIST` berhasil memicu tabrakan mole dan klik menu.
-- [x] Jendela PiP Diagnostik PCV merender poligon Convex Hull dan titik defek secara real-time tanpa *frame-rate drop*.
-- [x] Seluruh alur Level 1-10, Mode Survival, dan Audio Prosedural berjalan normal tanpa regresi.
+- [x] **Zero Learning Models**: Terverifikasi 100% bebas dari MediaPipe, DNN, dan Haar Cascade XML.
+- [x] **Zero Safe Area / No Static Partitions**: Tangan terverifikasi bebas bergerak di seluruh resolusi $1280 \times 720$.
+- [x] **Background Subtraction (`cv2.absdiff`)**: Terverifikasi memisahkan foreground gerak dari latar belakang statis.
+- [x] **Hierarki Kontur (`cv2.RETR_CCOMP`)**: Terverifikasi mendeteksi $\ge 3$ lubang internal pada wajah dan menolaknya.
+- [x] **Open-Palm Lock-On**: Terverifikasi hanya mengunci saat telapak tangan terbuka (defek $\ge 3$, sudut $< 85^\circ$, solidity $\le 0.82$). Wajah terbukti tidak dapat memicu lock-on.
+- [x] **Nearest-Neighbor Spatial Tracking**: Terverifikasi melacak tangan saat transisi ke FIST ($d \le 160\text{ px}$) tanpa melompat ke objek lain.
+- [x] **Gameplay & Audio**: Mode Survival, Mode Level 1-10, Grid multi-size, dan audio prosedural terverifikasi 100% berjalan normal.

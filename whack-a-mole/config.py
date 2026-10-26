@@ -1,15 +1,15 @@
-"""Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio (HD 1280x720)."""
+"""Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio (Full Screen HD 1280x720)."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 import numpy as np
 
-# Pengaturan kanvas dan kamera diperbesar ke HD widescreen
+# Pengaturan kanvas dan kamera (Full Screen HD Widescreen tanpa partisi Safe Area)
 DEFAULT_FRAME_WIDTH = 1280
 DEFAULT_FRAME_HEIGHT = 720
-WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual (HD 1280x720)"
+WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual (Pure OpenCV HD 1280x720)"
 
-# Rentang segmentasi warna kulit manusia default pada HSV (H: 0..179 di OpenCV)
+# Rentang segmentasi warna kulit default pada HSV (H: 0..179 di OpenCV)
 LOWER_SKIN_1 = np.array([0, 30, 50], dtype=np.uint8)
 UPPER_SKIN_1 = np.array([25, 210, 255], dtype=np.uint8)
 LOWER_SKIN_2 = np.array([170, 30, 50], dtype=np.uint8)
@@ -33,12 +33,23 @@ UPPER_GLOVE_HSV = np.array([180, 255, 75], dtype=np.uint8)
 LOWER_OBJECT_HSV = np.array([95, 120, 80], dtype=np.uint8)
 UPPER_OBJECT_HSV = np.array([130, 255, 255], dtype=np.uint8)
 
+# Parameter Background Subtraction Berbasis Referensi (Tombol 'B')
+BG_DIFF_THRESHOLD = 25  # Ambang batas selisih piksel absolut (cv2.absdiff)
+
+# Parameter Eliminasi Wajah via Topologi Hierarki Kontur (cv2.RETR_CCOMP)
+FACE_MIN_INTERNAL_HOLES = 3  # Ambang batas lubang internal mata/mulut
+FACE_MIN_HOLE_AREA = 25.0  # Luas minimal child contour untuk dihitung sebagai lubang
+
+# Parameter "Open-Palm Lock-On" & Nearest-Neighbor Tracking
+LOCKON_MAX_DISTANCE = 160.0  # Radius maksimal pelacakan nearest-neighbor (piksel)
+LOCKON_LOST_TIMEOUT_FRAMES = 16  # Toleransi frame hilang sebelum melepaskan lock-on (~0.5 detik)
+
 # Parameter pembersihan kontur dan pelacakan
 MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
-MAX_HAND_CONTOUR_AREA = 120000  # Batas atas untuk mengeliminasi background masif
+MAX_HAND_CONTOUR_AREA = 140000  # Batas atas untuk mengeliminasi background masif
 CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)
-BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual alternatif (detik)
+BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan alternatif (detik)
 
 # Definisi Hand Pose
 POSE_NONE = "NONE"
@@ -48,35 +59,14 @@ POSE_FIST = "FIST"
 # Threshold Klasifikasi Hand Pose
 HIGH_FIVE_MIN_DEFECTS = 3
 HIGH_FIVE_MAX_SOLIDITY = 0.78
+DEFECT_MAX_ANGLE_DEG = 85.0  # Sudut tajam celah sela jari (< 85 derajat)
+DEFECT_MIN_DEPTH_RATIO = 0.10
+
 FIST_MAX_DEFECTS = 1
-FIST_MIN_SOLIDITY = 0.83
+FIST_MIN_SOLIDITY = 0.82
 FIST_ASPECT_RATIO_MIN = 0.60
 FIST_ASPECT_RATIO_MAX = 1.40
-DEFECT_MAX_ANGLE_DEG = 90.0
-DEFECT_MIN_DEPTH_RATIO = 0.10
 FIST_FREEZE_DURATION = 0.35  # Durasi pembekuan posisi kursor saat transisi ke FIST (detik)
-
-# Preset Dual-Section (Playing Section vs Non-Playing Safe Zone)
-ZONE_PRESETS: List[Dict[str, Any]] = [
-    {
-        "name": "TANGAN KANAN (Kiri: Wajah Diblokir)",
-        "play_rect": (420, 0, 1280, 720),
-        "safe_rect": (0, 0, 420, 720),
-        "split_line": ((420, 0), (420, 720)),
-    },
-    {
-        "name": "TANGAN KIRI (Kanan: Wajah Diblokir)",
-        "play_rect": (0, 0, 860, 720),
-        "safe_rect": (860, 0, 1280, 720),
-        "split_line": ((860, 0), (860, 720)),
-    },
-    {
-        "name": "TANGAN BAWAH (Atas: Wajah Diblokir)",
-        "play_rect": (0, 240, 1280, 720),
-        "safe_rect": (0, 0, 1280, 240),
-        "split_line": ((0, 240), (1280, 240)),
-    },
-]
 
 # Pilihan preset ukuran grid (baris, kolom)
 GRID_PRESETS: List[Tuple[int, int]] = [

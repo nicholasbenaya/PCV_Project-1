@@ -32,7 +32,7 @@ except ImportError:
 def parse_arguments() -> argparse.Namespace:
     """Menguraikan argumen baris perintah saat menjalankan program."""
     parser = argparse.ArgumentParser(
-        description="Game Whack-A-Mole Virtual berbasis OpenCV murni dengan Hand Pose (HIGH_FIVE vs FIST) & PiP PCV."
+        description="Game Whack-A-Mole Virtual murni OpenCV (Lock-On, BG Subtraction, & PiP Diagnostik)."
     )
     parser.add_argument(
         "--camera",
@@ -81,7 +81,7 @@ def run_game() -> None:
     # Muat konfigurasi kalibrasi warna kulit jika ada di penyimpanan lokal
     hand_tracker.load_saved_calibration(game_engine.save_manager.calib_data)
 
-    # Tampilkan jendela PiP diagnostik fitur bentuk PCV secara default agar siap demo
+    # Tampilkan jendela PiP diagnostik fitur bentuk PCV secara default
     show_pip_diagnostic = True
 
     try:
@@ -103,16 +103,15 @@ def run_game() -> None:
             game_engine.update_frame_dimensions(w, h)
             current_time = time.time()
 
-            # Segmentasi, Auto Face Blackout, ekstraksi fitur bentuk (Convexity Defects & Solidity) & Klasifikasi Pose
-            play_rect = game_engine.active_zone["play_rect"]
-            hand_result = hand_tracker.process_frame(frame, play_rect=play_rect)
+            # 4 Pilar PCD Klasik: BG Subtraction, RETR_CCOMP Face Rejection, Open-Palm Lock-On, dan Nearest-Neighbor
+            hand_result = hand_tracker.process_frame(frame)
 
             # Update alur game, interaksi tombol (FIST click), dan logika tabrakan (FIST whack)
             action_status = game_engine.update(hand_result, current_time)
             if action_status == "exit":
                 break
 
-            # Render seluruh elemen visual antarmuka
+            # Render seluruh elemen visual antarmuka pada layar penuh
             game_engine.render(
                 frame,
                 hand_result,
@@ -141,10 +140,10 @@ def run_game() -> None:
                 elif game_engine.state == GameState.MENU:
                     break
 
-            # Ganti sisi Playing Section dengan tombol 'H' atau 'TAB'
-            elif key in (ord("h"), ord("H"), 9):  # 9 is TAB
-                new_zone_name = game_engine.switch_zone()
-                game_engine.audio.play_sfx("click")
+            # Rekam Frame Referensi Latar Belakang (Background Subtraction) dengan tombol 'B'
+            elif key in (ord("b"), ord("B")):
+                hand_tracker.capture_background(frame)
+                game_engine.audio.play_sfx("bonk")
 
             # Toggle Jendela PiP Diagnostik Fitur Bentuk PCV dengan tombol 'V' atau 'P'
             elif key in (ord("v"), ord("V"), ord("p"), ord("P")):
@@ -162,7 +161,6 @@ def run_game() -> None:
             # Masuk atau keluar mode kalibrasi dengan tombol 'C'
             elif key in (ord("c"), ord("C")):
                 if game_engine.state == GameState.CALIBRATION:
-                    # Ambil sampel langsung dan kembali ke menu
                     bx1, by1, bx2, by2 = game_engine.get_calibration_box()
                     roi = frame[by1:by2, bx1:bx2]
                     calib_dict = hand_tracker.calibrate_skin_sample(roi)

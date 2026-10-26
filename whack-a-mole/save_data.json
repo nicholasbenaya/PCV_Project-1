@@ -3,6 +3,24 @@
   "level_high_scores": {},
   "level_cleared": {},
   "survival_high_score": 0,
-  "selected_grid_index": 1,
-  "calib_data": null
+  "selected_grid_index": 2,
+  "calib_data": {
+    "mode": 0,
+    "cr_range": [
+      106,
+      190
+    ],
+    "cb_range": [
+      57,
+      169
+    ],
+    "h_range": [
+      0,
+      62
+    ],
+    "s_range": [
+      25,
+      175
+    ]
+  }
 }
