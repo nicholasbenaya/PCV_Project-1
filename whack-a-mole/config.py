@@ -19,12 +19,42 @@ UPPER_SKIN_2 = np.array([180, 210, 255], dtype=np.uint8)
 LOWER_SKIN_YCRCB = np.array([0, 133, 77], dtype=np.uint8)
 UPPER_SKIN_YCRCB = np.array([255, 175, 127], dtype=np.uint8)
 
+# Preset Segmentasi Alternatif untuk Demo
+PRESET_SKIN = 0
+PRESET_GLOVE = 1
+PRESET_OBJECT = 2
+PRESET_NAMES = ["Skin (YCrCb+HSV)", "Black Glove", "High-Contrast Object"]
+
+# Rentang untuk Black Glove Mode (Threshold Value gelap pada latar terang)
+LOWER_GLOVE_HSV = np.array([0, 0, 0], dtype=np.uint8)
+UPPER_GLOVE_HSV = np.array([180, 255, 75], dtype=np.uint8)
+
+# Rentang untuk High-Contrast Object Backup (default: warna biru / merah terang)
+LOWER_OBJECT_HSV = np.array([95, 120, 80], dtype=np.uint8)
+UPPER_OBJECT_HSV = np.array([130, 255, 255], dtype=np.uint8)
+
 # Parameter pembersihan kontur dan pelacakan
 MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
 MAX_HAND_CONTOUR_AREA = 120000  # Batas atas untuk mengeliminasi background masif
 CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)
-BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual (detik)
+BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual alternatif (detik)
+
+# Definisi Hand Pose
+POSE_NONE = "NONE"
+POSE_HIGH_FIVE = "HIGH_FIVE"
+POSE_FIST = "FIST"
+
+# Threshold Klasifikasi Hand Pose
+HIGH_FIVE_MIN_DEFECTS = 3
+HIGH_FIVE_MAX_SOLIDITY = 0.78
+FIST_MAX_DEFECTS = 1
+FIST_MIN_SOLIDITY = 0.83
+FIST_ASPECT_RATIO_MIN = 0.60
+FIST_ASPECT_RATIO_MAX = 1.40
+DEFECT_MAX_ANGLE_DEG = 90.0
+DEFECT_MIN_DEPTH_RATIO = 0.10
+FIST_FREEZE_DURATION = 0.35  # Durasi pembekuan posisi kursor saat transisi ke FIST (detik)
 
 # Preset Dual-Section (Playing Section vs Non-Playing Safe Zone)
 ZONE_PRESETS: List[Dict[str, Any]] = [
@@ -103,6 +133,8 @@ COLOR_TIMER_NORMAL = (0, 235, 0)
 COLOR_TIMER_CRITICAL = (0, 0, 245)
 COLOR_HIT_FLASH = (0, 255, 120)
 COLOR_RETICLE = (255, 220, 0)
+COLOR_HIGH_FIVE = (0, 255, 120)  # Hijau untuk OPEN PALM / MOVE
+COLOR_FIST = (0, 50, 255)  # Merah untuk FIST / WHACK
 COLOR_HOLE_OUTER = (80, 80, 80)
 COLOR_HOLE_INNER = (35, 35, 35)
 COLOR_MOLE_BODY = (40, 120, 225)

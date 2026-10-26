@@ -1,4 +1,4 @@
-"""Mesin logika game (State Machine, Audio Trigger, Survival Mode, Level Mode, Dual-Section & Kalibrasi)."""
+"""Mesin logika game (State Machine, Hand Pose Interactivity, Survival Mode, Level Mode, Audio)."""
 
 from enum import Enum
 import random
@@ -67,7 +67,7 @@ class GameState(Enum):
 
 
 class GameEngine:
-    """Mesin pengontrol alur permainan, logika tabrakan, isolasi Playing Section, dan integrasi audio."""
+    """Mesin pengontrol alur permainan, logika tabrakan gestur FIST, dan integrasi audio."""
 
     def __init__(
         self,
@@ -350,10 +350,10 @@ class GameEngine:
         return None
 
     def update(self, hand_result: HandTrackingResult, current_time: float) -> Optional[str]:
-        """Memperbarui alur logika per frame."""
+        """Memperbarui alur logika per frame dengan validasi Hand Pose (HIGH_FIVE move vs FIST whack)."""
         centroid = hand_result.centroid
 
-        # 1. Update status tombol jika berada di layar menu
+        # 1. Update status tombol di layar menu
         if self.state in (GameState.MENU, GameState.LEVEL_SELECT, GameState.GRID_SELECT):
             buttons = (
                 self.menu_buttons
@@ -364,16 +364,24 @@ class GameEngine:
                     else self.grid_buttons
                 )
             )
+
+            is_fist_ready = hand_result.is_fist and (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
+
             for btn in buttons:
-                clicked = btn.update_hover(centroid, current_time)
+                clicked = btn.update_interaction(
+                    point=centroid,
+                    is_fist_click=hand_result.is_fist_click,
+                    is_fist=is_fist_ready,
+                )
                 if clicked:
+                    self.last_hit_time = current_time
                     res = self.handle_button_action(btn.action_id, current_time)
                     if res == "exit":
                         return "exit"
                     break
             return None
 
-        # 2. Kalibrasi tidak memproses gameplay pukulan
+        # 2. Kalibrasi tidak memproses gameplay
         if self.state == GameState.CALIBRATION:
             return None
 
@@ -422,7 +430,9 @@ class GameEngine:
                         speed_max,
                     )
 
-            if hand_result.is_detected and centroid is not None:
+            # AKSI PUKUL (WHACK!): HANYA dieksekusi jika tangan berpose FIST (Kepal)!
+            # Jika tangan berpose HIGH_FIVE (Open Palm), kursor hanya membidik / move.
+            if hand_result.is_detected and hand_result.is_fist and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
                     for mole in self.moles:
@@ -485,7 +495,8 @@ class GameEngine:
                         cfg.mole_max_lifespan,
                     )
 
-            if hand_result.is_detected and centroid is not None:
+            # AKSI PUKUL (WHACK!): Wajib berpose FIST
+            if hand_result.is_detected and hand_result.is_fist and centroid is not None:
                 can_hit = (current_time - self.last_hit_time) >= HIT_DEBOUNCE_COOLDOWN
                 if can_hit:
                     for mole in self.moles:
@@ -523,35 +534,15 @@ class GameEngine:
         hand_result: HandTrackingResult,
         hand_tracker: HandTracker,
         current_time: float,
-        show_mask_pip: bool = False,
+        show_pip_diagnostic: bool = False,
     ) -> None:
         """Merender seluruh lapisan antarmuka grafis ke frame kamera."""
-        centroid = hand_result.centroid
-
         # 1. Gambar partisi Dual-Section (Playing Section vs Non-Playing Safe Zone)
         self.renderer.draw_sections_overlay(frame, self.active_zone)
 
-        # 2. Cari rasio progres hover tombol yang aktif
-        hover_progress = 0.0
-        if self.state == GameState.MENU:
-            for btn in self.menu_buttons:
-                if btn.is_hovered:
-                    hover_progress = btn.get_hover_ratio(current_time)
-                    break
-        elif self.state == GameState.LEVEL_SELECT:
-            for btn in self.level_buttons:
-                if btn.is_hovered:
-                    hover_progress = btn.get_hover_ratio(current_time)
-                    break
-        elif self.state == GameState.GRID_SELECT:
-            for btn in self.grid_buttons:
-                if btn.is_hovered:
-                    hover_progress = btn.get_hover_ratio(current_time)
-                    break
-
         play_rect = self.active_zone["play_rect"]
 
-        # 3. Render elemen spesifik tiap GameState
+        # 2. Render elemen spesifik tiap GameState
         if self.state == GameState.MENU:
             rows, cols = GRID_PRESETS[self.selected_grid_idx]
             grid_desc = f"{rows}x{cols} ({rows * cols} Lubang)"
@@ -563,6 +554,8 @@ class GameEngine:
                 is_calibrated=hand_tracker.is_calibrated,
                 survival_high_score=self.save_manager.survival_high_score,
                 unlocked_level=self.save_manager.unlocked_level,
+                preset_name=hand_result.preset_name,
+                current_pose=hand_result.pose,
                 play_rect=play_rect,
                 current_time=current_time,
             )
@@ -605,6 +598,7 @@ class GameEngine:
                 self.survival_tracker,
                 self.save_manager.survival_high_score,
                 hand_result.is_detected,
+                current_pose=hand_result.pose,
                 play_rect=play_rect,
                 current_time=current_time,
             )
@@ -625,6 +619,7 @@ class GameEngine:
                 time_left,
                 best,
                 hand_result.is_detected,
+                current_pose=hand_result.pose,
                 play_rect=play_rect,
             )
 
@@ -678,9 +673,9 @@ class GameEngine:
                 secondary_prompt="[M] / [ESC] Kembali ke Menu Utama",
             )
 
-        # Gambar kursor tangan di atas seluruh elemen
-        self.renderer.draw_hand_cursor(frame, centroid, hover_progress)
+        # 3. Gambar kursor tangan cerdas (membedakan HIGH_FIVE dan FIST)
+        self.renderer.draw_hand_cursor(frame, hand_result)
 
-        # Inset Picture-in-Picture untuk monitoring masker biner di Playing Section
-        if show_mask_pip and hand_result.mask is not None:
-            self.renderer.draw_mask_pip(frame, hand_result.mask)
+        # 4. Jendela PiP Diagnostik Fitur Bentuk PCV (Convex Hull, Defek, Solidity, Pose)
+        if show_pip_diagnostic and hand_result.mask is not None:
+            self.renderer.draw_diagnostic_pip(frame, hand_result)

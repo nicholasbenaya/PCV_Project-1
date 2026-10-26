@@ -106,27 +106,35 @@ class HitEffect:
         return (current_time - self.spawn_time) < self.duration
 
     def get_progress(self, current_time: float) -> float:
-        age = current_time - self.spawn_time
-        return max(0.0, min(1.0, age / self.duration))
+        elapsed = current_time - self.spawn_time
+        return min(1.0, max(0.0, elapsed / self.duration))
 
 
 class ScoreManager:
-    """Pencatat skor, combo pukulan beruntun, dan hitungan target."""
+    """Pengelola perolehan skor, hit counter, kombo, dan akurasi sesi bermain."""
 
     def __init__(self):
         self.score: int = 0
         self.hits_count: int = 0
+        self.misses_count: int = 0
         self.combo: int = 0
         self.max_combo: int = 0
 
+    def reset_session(self) -> None:
+        self.score = 0
+        self.hits_count = 0
+        self.misses_count = 0
+        self.combo = 0
+        self.max_combo = 0
+
     def record_hit(self) -> int:
-        """Menghitung perolehan skor pukulan dengan multiplier combo bertingkat."""
+        """Mencatat pukulan sukses dan menghitung kombo pelipat ganda."""
         self.hits_count += 1
         self.combo += 1
         if self.combo > self.max_combo:
             self.max_combo = self.combo
 
-        # Multiplier: combo 1-2 = 1x, 3-5 = 2x, 6-9 = 3x, >=10 = 4x
+        # Multiplier kombo bertingkat
         multiplier = 1
         if self.combo >= 10:
             multiplier = 4
@@ -135,37 +143,39 @@ class ScoreManager:
         elif self.combo >= 3:
             multiplier = 2
 
-        points = 10 * multiplier
-        self.score += points
-        return points
+        added_points = 100 * multiplier
+        self.score += added_points
+        return added_points
 
     def record_miss(self) -> None:
-        """Mereset rentetan combo bila mole kabur tanpa dipukul."""
+        """Mereset kombo saat mole kabur sebelum dipukul."""
+        self.misses_count += 1
         self.combo = 0
 
-    def reset_session(self) -> None:
-        self.score = 0
-        self.hits_count = 0
-        self.combo = 0
-        self.max_combo = 0
+    @property
+    def accuracy(self) -> float:
+        total = self.hits_count + self.misses_count
+        if total == 0:
+            return 100.0
+        return (self.hits_count / total) * 100.0
 
 
 class SurvivalTracker:
-    """Pengelola siklus hidup, HP nyawa, dan intensitas mode Survival."""
+    """Pelacak tingkat kesulitan dinamis untuk Mode Survival."""
 
     def __init__(self, start_time: float):
-        self.lives: int = SURVIVAL_INITIAL_LIVES
-        self.max_lives: int = SURVIVAL_MAX_LIVES
-        self.start_time: float = start_time
+        self.start_time = start_time
+        self.lives = SURVIVAL_INITIAL_LIVES
+        self.max_lives = SURVIVAL_MAX_LIVES
 
     def get_elapsed(self, current_time: float) -> float:
         return max(0.0, current_time - self.start_time)
 
     def get_intensity_tier(self, current_time: float) -> int:
-        """Menghitung tingkat intensitas 1 sampai 4 berdasarkan durasi bertahan."""
+        """Mengembalikan tingkat intensitas (1 s.d 4) berdasarkan durasi bertahan."""
         elapsed = self.get_elapsed(current_time)
         tier = int(elapsed // SURVIVAL_TIER_INTERVAL) + 1
-        return max(1, min(4, tier))
+        return min(4, max(1, tier))
 
     def get_mole_speed(self, current_time: float) -> Tuple[float, float]:
         """Mengembalikan batas waktu kemunculan mole (semakin lama semakin cepat)."""
@@ -197,7 +207,7 @@ class SurvivalTracker:
 
 
 class InteractiveButton:
-    """Komponen tombol UI interaktif yang dapat diklik lewat keyboard atau hover tangan."""
+    """Komponen tombol UI interaktif yang dapat dipilih lewat HIGH_FIVE (hover) dan FIST (click)."""
 
     def __init__(
         self,
@@ -225,8 +235,28 @@ class InteractiveButton:
         x1, y1, x2, y2 = self.rect
         return x1 <= x <= x2 and y1 <= y <= y2
 
+    def update_interaction(
+        self,
+        point: Optional[Tuple[int, int]],
+        is_fist_click: bool = False,
+        is_fist: bool = False,
+    ) -> bool:
+        """Memperbarui status hover (HIGH_FIVE) dan memicu aksi saat gestur kepalan (FIST) terdeteksi."""
+        if not self.enabled or self.locked:
+            self.is_hovered = False
+            return False
+
+        hovering = self.contains(point)
+        self.is_hovered = hovering
+
+        # Eksekusi aksi jika tombol di-hover dan terjadi gestur kepalan (FIST)
+        if hovering and (is_fist_click or is_fist):
+            return True
+
+        return False
+
     def update_hover(self, point: Optional[Tuple[int, int]], current_time: float) -> bool:
-        """Memperbarui status hover dan mendeteksi klik virtual saat waktu tahan terpenuhi."""
+        """Fallback kompatibilitas: hover biasa."""
         if not self.enabled or self.locked:
             self.hover_start_time = None
             self.is_hovered = False
@@ -234,22 +264,8 @@ class InteractiveButton:
 
         hovering = self.contains(point)
         self.is_hovered = hovering
-
-        if hovering:
-            if self.hover_start_time is None:
-                self.hover_start_time = current_time
-            elif (current_time - self.hover_start_time) >= BUTTON_HOVER_TRIGGER_TIME:
-                # Waktu tahan terpenuhi -> Picu aksi klik
-                self.hover_start_time = None
-                return True
-        else:
-            self.hover_start_time = None
-
         return False
 
     def get_hover_ratio(self, current_time: float) -> float:
-        """Mengembalikan rasio pengisian lingkaran tahan hover (0.0 s.d 1.0)."""
-        if self.hover_start_time is None or not self.is_hovered:
-            return 0.0
-        elapsed = current_time - self.hover_start_time
-        return max(0.0, min(1.0, elapsed / BUTTON_HOVER_TRIGGER_TIME))
+        """Mengembalikan rasio pengisian lingkaran visual hover."""
+        return 0.0

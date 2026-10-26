@@ -1,6 +1,6 @@
-"""Modul visualisasi OpenCV lengkap (HD 1280x720) dengan Dual-Section dan Kalibrasi."""
+"""Modul visualisasi OpenCV lengkap (HD 1280x720) dengan Dual-Section, Hand Pose Visualizer, & PiP Diagnostik."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
@@ -9,7 +9,9 @@ try:
         COLOR_BUTTON_BG,
         COLOR_BUTTON_BORDER,
         COLOR_BUTTON_HOVER,
+        COLOR_FIST,
         COLOR_HEART_RED,
+        COLOR_HIGH_FIVE,
         COLOR_HIT_FLASH,
         COLOR_HOLE_INNER,
         COLOR_HOLE_OUTER,
@@ -23,6 +25,9 @@ try:
         COLOR_TIMER_NORMAL,
         GRID_PRESETS,
         LEVEL_CONFIGS,
+        POSE_FIST,
+        POSE_HIGH_FIVE,
+        PRESET_NAMES,
         LevelConfig,
     )
     from .entities import HitEffect, Hole, InteractiveButton, Mole, ScoreManager, SurvivalTracker
@@ -31,7 +36,9 @@ except ImportError:
         COLOR_BUTTON_BG,
         COLOR_BUTTON_BORDER,
         COLOR_BUTTON_HOVER,
+        COLOR_FIST,
         COLOR_HEART_RED,
+        COLOR_HIGH_FIVE,
         COLOR_HIT_FLASH,
         COLOR_HOLE_INNER,
         COLOR_HOLE_OUTER,
@@ -45,6 +52,9 @@ except ImportError:
         COLOR_TIMER_NORMAL,
         GRID_PRESETS,
         LEVEL_CONFIGS,
+        POSE_FIST,
+        POSE_HIGH_FIVE,
+        PRESET_NAMES,
         LevelConfig,
     )
     from entities import HitEffect, Hole, InteractiveButton, Mole, ScoreManager, SurvivalTracker
@@ -98,49 +108,41 @@ class UIRenderer:
 
         # Garis pembatas neon
         p_start, p_end = zone_cfg["split_line"]
-        cv2.line(frame, p_start, p_end, COLOR_PRIMARY_CYAN, 3, cv2.LINE_AA)
+        cv2.line(frame, p_start, p_end, COLOR_PRIMARY_CYAN, 2, cv2.LINE_AA)
 
-        # Label pada Non-Playing Section
+        # Label Non-Playing Safe Zone
+        safe_cx = (sx1 + sx2) // 2
+        safe_cy = (sy1 + sy2) // 2
+        label_safe_1 = "SAFE ZONE (WAJAH & TUBUH)"
+        label_safe_2 = "Pelacakan Dinonaktifkan 100%"
+        s1_w = cv2.getTextSize(label_safe_1, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 2)[0][0]
+        s2_w = cv2.getTextSize(label_safe_2, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0][0]
+
         self.draw_text_with_outline(
             frame,
-            "NON-PLAYING SECTION",
-            (sx1 + 25, 42),
-            scale=0.65,
-            color=(180, 190, 210),
+            label_safe_1,
+            (safe_cx - s1_w // 2, safe_cy - 10),
+            scale=0.52,
+            color=(170, 170, 180),
             thickness=2,
         )
         self.draw_text_with_outline(
             frame,
-            "[SAFE ZONE] Wajah & Tubuh Terblokir 100%",
-            (sx1 + 25, 70),
-            scale=0.48,
-            color=(0, 255, 120),
-            thickness=1,
-        )
-        self.draw_text_with_outline(
-            frame,
-            "Kepala Anda berada di sini dengan aman tanpa mengganggu kursor",
-            (sx1 + 25, 96),
-            scale=0.40,
-            color=(160, 160, 160),
+            label_safe_2,
+            (safe_cx - s2_w // 2, safe_cy + 18),
+            scale=0.42,
+            color=(130, 130, 140),
             thickness=1,
         )
 
-        # Label pada Playing Section
+        # Label header Playing Section
+        zone_name = zone_cfg["name"]
         self.draw_text_with_outline(
             frame,
-            "PLAYING SECTION [ZONA TANGAN AKTIF]",
-            (px1 + 25, 42),
-            scale=0.72,
+            f"ARENA BERMAIN: {zone_name} (Tekan [H] / [TAB] untuk Tukar Sisi)",
+            (px1 + 25, 35),
+            scale=0.50,
             color=COLOR_PRIMARY_CYAN,
-            thickness=2,
-        )
-        self.draw_text_with_outline(
-            frame,
-            f"Tata Letak: {zone_cfg['name']}  |  [H] Ganti Sisi Tangan",
-            (px1 + 25, 70),
-            scale=0.48,
-            color=(255, 220, 100),
             thickness=1,
         )
 
@@ -150,54 +152,60 @@ class UIRenderer:
         button: InteractiveButton,
         current_time: float,
     ) -> None:
-        """Merender tombol interaktif dengan efek hover dan meteran pengisian virtual touch."""
+        """Merender komponen tombol UI interaktif dengan efek hover/fist highlight."""
         x1, y1, x2, y2 = button.rect
-        w, h = x2 - x1, y2 - y1
+        hovered = button.is_hovered
+        locked = button.locked
 
-        if button.locked:
-            bg_color = (25, 25, 25)
-            border_color = COLOR_LOCKED_GRAY
-            text_color = COLOR_LOCKED_GRAY
-        elif button.is_hovered:
-            bg_color = COLOR_BUTTON_HOVER
-            border_color = (0, 255, 255)
-            text_color = (0, 255, 255)
-        else:
-            bg_color = COLOR_BUTTON_BG
-            border_color = COLOR_BUTTON_BORDER
-            text_color = COLOR_TEXT_WHITE
+        bg_color = (
+            COLOR_LOCKED_GRAY
+            if locked
+            else (COLOR_BUTTON_HOVER if hovered else COLOR_BUTTON_BG)
+        )
+        border_color = (
+            (60, 60, 60)
+            if locked
+            else ((0, 255, 120) if hovered else COLOR_BUTTON_BORDER)
+        )
+        border_thickness = 3 if hovered else 1
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), bg_color, -1)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, 2)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), border_color, border_thickness)
 
-        label_text = button.label if not button.locked else f"{button.label} [TERKUNCI]"
-        t_size = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.58, 2)[0]
-        tx = x1 + (w - t_size[0]) // 2
-        ty = y1 + (h + t_size[1]) // 2 - 2
+        lbl = button.label + (" [TERKUNCI]" if locked else "")
+        lbl_color = (
+            (140, 140, 140)
+            if locked
+            else ((0, 255, 120) if hovered else COLOR_TEXT_WHITE)
+        )
+
+        font_scale = 0.58 if len(lbl) < 30 else 0.50
+        text_size = cv2.getTextSize(lbl, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)[0]
+        tx = x1 + 22
+        ty = y1 + (y2 - y1 + text_size[1]) // 2
 
         self.draw_text_with_outline(
             frame,
-            label_text,
+            lbl,
             (tx, ty),
-            scale=0.58,
-            color=text_color,
+            scale=font_scale,
+            color=lbl_color,
             thickness=2,
         )
 
         if button.hotkey_desc:
+            h_size = cv2.getTextSize(
+                button.hotkey_desc, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1
+            )[0]
+            hx = x2 - h_size[0] - 18
             self.draw_text_with_outline(
                 frame,
                 button.hotkey_desc,
-                (x1 + 10, y1 + 18),
-                scale=0.42,
-                color=(170, 170, 170),
+                (hx, ty),
+                scale=0.48,
+                color=(180, 220, 255),
                 thickness=1,
             )
-
-        ratio = button.get_hover_ratio(current_time)
-        if ratio > 0.0:
-            fill_w = int(w * ratio)
-            cv2.rectangle(frame, (x1, y2 - 4), (x1 + fill_w, y2), (0, 255, 120), -1)
 
     def draw_main_menu(
         self,
@@ -208,30 +216,39 @@ class UIRenderer:
         is_calibrated: bool,
         survival_high_score: int,
         unlocked_level: int,
+        preset_name: str,
+        current_pose: str,
         play_rect: Tuple[int, int, int, int],
         current_time: float,
     ) -> None:
-        """Merender tampilan Menu Utama lengkap dengan opsi mode dan navigasi."""
+        """Merender tampilan Menu Utama lengkap di dalam Playing Section."""
         px1, py1, px2, py2 = play_rect
-        pw = px2 - px1
 
-        # Judul Menu di dalam Playing Section
         title_x = px1 + 35
         self.draw_text_with_outline(
             frame,
-            "WHACK-A-MOLE VIRTUAL",
-            (title_x, 118),
+            "WHACK-A-MOLE VIRTUAL (HD)",
+            (title_x, 82),
             scale=1.05,
             color=COLOR_PRIMARY_CYAN,
             thickness=3,
         )
+        self.draw_text_with_outline(
+            frame,
+            "Kontrol Gerak: [OPEN PALM] Arahkan  |  [FIST] Pukul / Klik",
+            (title_x, 115),
+            scale=0.55,
+            color=(0, 255, 120),
+            thickness=2,
+        )
 
-        # Status badge ringkas
         audio_str = "ON" if audio_enabled else "OFF"
         calib_str = "TERKALIBRASI" if is_calibrated else "DEFAULT"
         calib_color = (0, 255, 120) if is_calibrated else (255, 220, 100)
 
-        badges_line = f"Grid: {grid_desc}  |  Audio: {audio_str}  |  Kalibrasi: {calib_str}"
+        badges_line = (
+            f"Grid: {grid_desc}  |  Audio: {audio_str}  |  Mode: {preset_name}  |  Kalib: {calib_str}"
+        )
         self.draw_text_with_outline(
             frame,
             badges_line,
@@ -241,14 +258,25 @@ class UIRenderer:
             thickness=1,
         )
 
-        stats_line = f"Rekor Survival: {survival_high_score}  |  Level Terbuka: {unlocked_level}/10"
+        pose_color = (0, 255, 120) if current_pose == POSE_HIGH_FIVE else ((0, 50, 255) if current_pose == POSE_FIST else (180, 180, 180))
+        pose_str = f"STATUS GESTUR: [{current_pose}]"
+        stats_line = f"Rekor Survival: {survival_high_score}  |  Level Terbuka: {unlocked_level}/10  |  "
         self.draw_text_with_outline(
             frame,
             stats_line,
-            (title_x, 170),
+            (title_x, 172),
             scale=0.46,
             color=(180, 220, 255),
             thickness=1,
+        )
+        stats_w = cv2.getTextSize(stats_line, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 1)[0][0]
+        self.draw_text_with_outline(
+            frame,
+            pose_str,
+            (title_x + stats_w, 172),
+            scale=0.48,
+            color=pose_color,
+            thickness=2,
         )
 
         # Render seluruh tombol menu
@@ -256,7 +284,7 @@ class UIRenderer:
             self.draw_button(frame, btn, current_time)
 
         # Petunjuk interaksi bawah
-        hint = "Arahkan tangan ke tombol untuk memilih, atau tekan angka [1-6] | [C] Kalibrasi | [H] Ganti Sisi"
+        hint = "OPEN PALM: Arahkan Kursor  |  FIST: Klik Opsi  |  [V] PiP Fitur PCV  |  [M] Ganti Mode  |  [C] Kalibrasi"
         self.draw_text_with_outline(
             frame,
             hint,
@@ -278,11 +306,9 @@ class UIRenderer:
         cx = (x1 + x2) // 2
         cy = (y1 + y2) // 2
 
-        # Kotak target kalibrasi warna hijau
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 120), 3)
         cv2.circle(frame, (cx, cy), 6, (0, 255, 120), -1)
 
-        # Garis bidik sudut (corner brackets)
         arm = 18
         cv2.line(frame, (x1, y1), (x1 + arm, y1), (0, 255, 120), 4)
         cv2.line(frame, (x1, y1), (x1, y1 + arm), (0, 255, 120), 4)
@@ -293,7 +319,6 @@ class UIRenderer:
         cv2.line(frame, (x2, y2), (x2 - arm, y2), (0, 255, 120), 4)
         cv2.line(frame, (x2, y2), (x2, y2 - arm), (0, 255, 120), 4)
 
-        # Teks petunjuk langkah kalibrasi
         self.draw_text_with_outline(
             frame,
             "MODE KALIBRASI WARNA KULIT TANGAN",
@@ -327,7 +352,6 @@ class UIRenderer:
             thickness=1,
         )
 
-        # Tampilkan informasi status kalibrasi
         status_txt = "STATUS: SUDAH TERKALIBRASI" if is_calibrated else "STATUS: MENGGUNAKAN PROFIL DEFAULT"
         col = (0, 255, 120) if is_calibrated else (255, 200, 50)
         self.draw_text_with_outline(
@@ -361,37 +385,21 @@ class UIRenderer:
         )
         self.draw_text_with_outline(
             frame,
-            "Selesaikan level sebelumnya untuk membuka kunci level selanjutnya",
+            f"Level Terbuka: {unlocked_level}/10 | Buka level berikutnya dengan menyelesaikan level sebelumnya",
             (px1 + 35, 142),
             scale=0.46,
-            color=(180, 180, 180),
+            color=(180, 220, 255),
             thickness=1,
         )
 
         for btn in buttons:
             self.draw_button(frame, btn, current_time)
 
-            if btn.action_id.startswith("level_"):
-                lvl = int(btn.action_id.split("_")[1])
-                cfg: Optional[LevelConfig] = LEVEL_CONFIGS.get(lvl)
-                if cfg:
-                    x1, y1, x2, y2 = btn.rect
-                    best = high_scores.get(str(lvl), 0)
-                    info = f"Tgt: {cfg.target_hits} | Rekor: {best}"
-                    self.draw_text_with_outline(
-                        frame,
-                        info,
-                        (x1 + 6, y2 - 8),
-                        scale=0.36,
-                        color=(200, 200, 200) if lvl <= unlocked_level else COLOR_LOCKED_GRAY,
-                        thickness=1,
-                    )
-
-        hint = "Pilih level dengan hover tangan atau tekan angka [1-9] / [0] | [ESC] Menu"
+        hint = "Arahkan tangan [OPEN PALM] ke kartu level lalu kepalkan tangan [FIST] untuk Memilih | [ESC] Menu"
         self.draw_text_with_outline(
             frame,
             hint,
-            (px1 + 25, py2 - 20),
+            (px1 + 25, py2 - 25),
             scale=0.44,
             color=(160, 240, 160),
             thickness=1,
@@ -405,62 +413,47 @@ class UIRenderer:
         play_rect: Tuple[int, int, int, int],
         current_time: float,
     ) -> None:
-        """Merender layar pengaturan ukuran grid arena di dalam Playing Section."""
+        """Merender layar konfigurasi ukuran grid di dalam Playing Section."""
         px1, py1, px2, py2 = play_rect
 
         self.draw_text_with_outline(
             frame,
-            "PENGATURAN UKURAN GRID",
-            (px1 + 35, 115),
-            scale=0.92,
+            "PENGATURAN UKURAN GRID LUBANG",
+            (px1 + 35, 105),
+            scale=0.88,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
         )
         self.draw_text_with_outline(
             frame,
-            "Pilih tata letak lubang sesuai selera dan kenyamanan bermain Anda",
-            (px1 + 35, 142),
+            "Pilih tata letak arena bermain yang diinginkan (Tersimpan otomatis)",
+            (px1 + 35, 134),
             scale=0.46,
-            color=(180, 180, 180),
+            color=(180, 220, 255),
             thickness=1,
         )
 
-        for btn in buttons:
+        for i, btn in enumerate(buttons[:-1]):
             self.draw_button(frame, btn, current_time)
-
-            if btn.action_id.startswith("grid_"):
-                idx = int(btn.action_id.split("_")[1])
-                rows, cols = GRID_PRESETS[idx]
+            if i == selected_index:
                 x1, y1, x2, y2 = btn.rect
+                cv2.rectangle(frame, (x1 - 4, y1 - 4), (x2 + 4, y2 + 4), (0, 255, 120), 2)
+                self.draw_text_with_outline(
+                    frame,
+                    "[AKTIF]",
+                    (x2 - 100, y1 + 34),
+                    scale=0.48,
+                    color=(0, 255, 120),
+                    thickness=2,
+                )
 
-                if idx == selected_index:
-                    self.draw_text_with_outline(
-                        frame,
-                        "[SEDANG AKTIF]",
-                        (x2 - 130, y1 + 22),
-                        scale=0.44,
-                        color=(0, 255, 120),
-                        thickness=1,
-                    )
+        self.draw_button(frame, buttons[-1], current_time)
 
-                # Gambar diagram miniatur lubang
-                preview_cx = x1 + 55
-                preview_cy = (y1 + y2) // 2
-                spacing_x = 18
-                spacing_y = 15
-                start_x = preview_cx - (cols - 1) * spacing_x // 2
-                start_y = preview_cy - (rows - 1) * spacing_y // 2
-                for r in range(rows):
-                    for c in range(cols):
-                        dot_x = start_x + c * spacing_x
-                        dot_y = start_y + r * spacing_y
-                        cv2.circle(frame, (dot_x, dot_y), 4, (0, 220, 255), -1, cv2.LINE_AA)
-
-        hint = "Hover tangan untuk memilih atau tekan [1-4] | [ESC] Kembali ke Menu"
+        hint = "Arahkan [OPEN PALM] lalu kepalkan tangan [FIST] untuk Memilih Grid | [ESC] Menu"
         self.draw_text_with_outline(
             frame,
             hint,
-            (px1 + 25, py2 - 20),
+            (px1 + 25, py2 - 25),
             scale=0.44,
             color=(160, 240, 160),
             thickness=1,
@@ -473,89 +466,70 @@ class UIRenderer:
         survival_tracker: SurvivalTracker,
         high_score: int,
         hand_detected: bool,
+        current_pose: str,
         play_rect: Tuple[int, int, int, int],
         current_time: float,
     ) -> None:
-        """Merender HUD atas khusus Mode Survival di dalam Playing Section."""
+        """Merender HUD atas khusus Mode Survival."""
         px1, py1, px2, py2 = play_rect
         pw = px2 - px1
 
-        # Nyawa / HP (Hearts)
-        heart_x = px1 + 25
         self.draw_text_with_outline(
             frame,
-            "NYAWA:",
-            (heart_x, 118),
-            scale=0.55,
-            color=(200, 200, 200),
-            thickness=1,
-        )
-        for i in range(survival_tracker.max_lives):
-            hx = heart_x + 70 + i * 24
-            hy = 112
-            color = COLOR_HEART_RED if i < survival_tracker.lives else (50, 50, 50)
-            cv2.circle(frame, (hx, hy), 8, color, -1, cv2.LINE_AA)
-
-        # Skor & Combo
-        combo_str = f" (x{score_manager.combo} COMBO)" if score_manager.combo >= 2 else ""
-        self.draw_text_with_outline(
-            frame,
-            f"SKOR: {score_manager.score}{combo_str}",
-            (heart_x, 146),
-            scale=0.72,
-            color=(0, 230, 255),
-            thickness=2,
-        )
-
-        # Tingkat Intensitas di Tengah Playing Section
-        tier = survival_tracker.get_intensity_tier(current_time)
-        stars = "★" * tier + "☆" * (4 - tier)
-        tier_colors = [
-            (0, 230, 100),
-            (0, 220, 255),
-            (0, 140, 255),
-            (0, 0, 255),
-        ]
-        t_color = tier_colors[tier - 1]
-        tier_text = f"INTENSITAS {tier} {stars}"
-        t_size = cv2.getTextSize(tier_text, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)[0]
-        self.draw_text_with_outline(
-            frame,
-            tier_text,
-            (px1 + (pw - t_size[0]) // 2, 118),
+            f"SKOR: {score_manager.score}",
+            (px1 + 25, 118),
             scale=0.75,
-            color=t_color,
+            color=COLOR_PRIMARY_CYAN,
             thickness=2,
         )
+
+        combo = score_manager.combo
+        if combo >= 3:
+            multiplier = 4 if combo >= 10 else (3 if combo >= 6 else 2)
+            self.draw_text_with_outline(
+                frame,
+                f"KOMBO x{multiplier}! ({combo}x Hit)",
+                (px1 + 25, 146),
+                scale=0.55,
+                color=(0, 255, 120),
+                thickness=2,
+            )
 
         elapsed = survival_tracker.get_elapsed(current_time)
-        time_text = f"SURVIVE: {elapsed:.1f}s"
-        tt_size = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.58, 1)[0]
+        tier = survival_tracker.get_intensity_tier(current_time)
+        tier_names = {1: "SANTAI", 2: "INTENS", 3: "CEPAT", 4: "EKSTREM"}
+        timer_text = f"SURVIVAL: {elapsed:.1f}s | TIER {tier}: {tier_names.get(tier, 'MAX')}"
+        t_size = cv2.getTextSize(timer_text, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)[0]
         self.draw_text_with_outline(
             frame,
-            time_text,
-            (px1 + (pw - tt_size[0]) // 2, 146),
-            scale=0.58,
-            color=(220, 220, 220),
-            thickness=1,
+            timer_text,
+            (px1 + (pw - t_size[0]) // 2, 118),
+            scale=0.65,
+            color=(255, 220, 0),
+            thickness=2,
         )
 
-        # Status Tangan
-        hand_color = (0, 240, 100) if hand_detected else (0, 80, 240)
-        hand_text = "TANGAN: AKTIF" if hand_detected else "TANGAN: HILANG"
-        cv2.circle(frame, (px2 - 190, 114), 7, hand_color, -1, cv2.LINE_AA)
+        # Gambar simbol nyawa (hati)
+        heart_x = px1 + (pw - t_size[0]) // 2
+        for i in range(survival_tracker.max_lives):
+            color = COLOR_HEART_RED if i < survival_tracker.lives else (80, 80, 80)
+            cv2.circle(frame, (heart_x + i * 26 + 10, 142), 8, color, -1, cv2.LINE_AA)
+
+        # Status Gestur & Tangan
+        pose_color = (0, 255, 120) if current_pose == POSE_HIGH_FIVE else ((0, 50, 255) if current_pose == POSE_FIST else (180, 180, 180))
+        pose_label = f"[{current_pose}]"
         self.draw_text_with_outline(
             frame,
-            hand_text,
-            (px2 - 175, 118),
-            scale=0.50,
-            color=hand_color,
-            thickness=1,
+            pose_label,
+            (px2 - 185, 118),
+            scale=0.52,
+            color=pose_color,
+            thickness=2,
         )
         self.draw_text_with_outline(
             frame,
             f"REKOR: {high_score}",
-            (px2 - 175, 144),
+            (px2 - 185, 144),
             scale=0.50,
             color=(180, 180, 180),
             thickness=1,
@@ -569,6 +543,7 @@ class UIRenderer:
         time_left: float,
         best_score: int,
         hand_detected: bool,
+        current_pose: str,
         play_rect: Tuple[int, int, int, int],
     ) -> None:
         """Merender HUD atas khusus Mode Level Progression."""
@@ -595,7 +570,6 @@ class UIRenderer:
             thickness=1,
         )
 
-        # Progress bar
         bar_x = px1 + 190
         bar_w = 120
         ratio = max(0.0, min(1.0, hits / target))
@@ -603,7 +577,6 @@ class UIRenderer:
         cv2.rectangle(frame, (bar_x, 134), (bar_x + int(bar_w * ratio), 146), (0, 255, 120), -1)
         cv2.rectangle(frame, (bar_x, 134), (bar_x + bar_w, 146), (120, 120, 120), 1)
 
-        # Timer Countdown di Tengah
         time_color = COLOR_TIMER_NORMAL if time_left > 5.0 else COLOR_TIMER_CRITICAL
         time_text = f"WAKTU: {max(0.0, time_left):.1f}s"
         t_size = cv2.getTextSize(time_text, cv2.FONT_HERSHEY_SIMPLEX, 0.88, 2)[0]
@@ -616,21 +589,19 @@ class UIRenderer:
             thickness=2,
         )
 
-        hand_color = (0, 240, 100) if hand_detected else (0, 80, 240)
-        hand_text = "TANGAN: AKTIF" if hand_detected else "TANGAN: HILANG"
-        cv2.circle(frame, (px2 - 190, 114), 7, hand_color, -1, cv2.LINE_AA)
+        pose_color = (0, 255, 120) if current_pose == POSE_HIGH_FIVE else ((0, 50, 255) if current_pose == POSE_FIST else (180, 180, 180))
         self.draw_text_with_outline(
             frame,
-            hand_text,
-            (px2 - 175, 118),
-            scale=0.50,
-            color=hand_color,
-            thickness=1,
+            f"[{current_pose}]",
+            (px2 - 185, 118),
+            scale=0.52,
+            color=pose_color,
+            thickness=2,
         )
         self.draw_text_with_outline(
             frame,
             f"REKOR: {best_score}",
-            (px2 - 175, 144),
+            (px2 - 185, 144),
             scale=0.50,
             color=(180, 180, 180),
             thickness=1,
@@ -648,117 +619,253 @@ class UIRenderer:
         active_indices = {m.current_hole_idx: m for m in moles}
 
         for hole in holes:
-            hx, hy, r = hole.x, hole.y, hole.radius
+            hx, hy = hole.x, hole.y
+            r = hole.radius
 
-            cv2.circle(frame, (hx, hy), r, COLOR_HOLE_INNER, -1, cv2.LINE_AA)
-            cv2.circle(frame, (hx, hy), r, COLOR_HOLE_OUTER, 3, cv2.LINE_AA)
-            cv2.ellipse(
-                frame,
-                (hx, hy + int(r * 0.45)),
-                (int(r * 0.70), int(r * 0.35)),
-                0,
-                0,
-                360,
-                (20, 20, 20),
-                -1,
-                cv2.LINE_AA,
-            )
+            # Lubang tanah 3D ilusi
+            cv2.ellipse(frame, (hx, hy + 6), (r, int(r * 0.72)), 0, 0, 360, (25, 25, 25), -1, cv2.LINE_AA)
+            cv2.ellipse(frame, (hx, hy), (r, int(r * 0.70)), 0, 0, 360, COLOR_HOLE_OUTER, 3, cv2.LINE_AA)
+            cv2.ellipse(frame, (hx, hy), (r - 4, int((r - 4) * 0.68)), 0, 0, 360, COLOR_HOLE_INNER, -1, cv2.LINE_AA)
 
             if hole.index in active_indices:
                 mole = active_indices[hole.index]
-                ratio = mole.get_time_ratio(current_time)
-                mole_r = int(r * 0.75)
+                time_ratio = mole.get_time_ratio(current_time)
 
-                cv2.circle(frame, (hx, hy), mole_r, COLOR_MOLE_BODY, -1, cv2.LINE_AA)
-                cv2.circle(frame, (hx, hy), mole_r, COLOR_PRIMARY_CYAN, 3, cv2.LINE_AA)
+                # Animasi popping up
+                up_offset = int(r * 0.40 * time_ratio)
+                body_cy = hy - up_offset
+                body_rx = int(r * 0.62)
+                body_ry = int(r * 0.68)
 
-                eye_x = int(mole_r * 0.35)
-                eye_y = hy - int(mole_r * 0.20)
-                cv2.circle(frame, (hx - eye_x, eye_y), 6, (20, 20, 20), -1, cv2.LINE_AA)
-                cv2.circle(frame, (hx + eye_x, eye_y), 6, (20, 20, 20), -1, cv2.LINE_AA)
-                cv2.circle(frame, (hx - eye_x + 1, eye_y - 1), 2, (255, 255, 255), -1, cv2.LINE_AA)
-                cv2.circle(frame, (hx + eye_x + 1, eye_y - 1), 2, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.ellipse(frame, (hx, body_cy), (body_rx, body_ry), 0, 0, 360, COLOR_MOLE_BODY, -1, cv2.LINE_AA)
+                cv2.ellipse(frame, (hx, body_cy), (body_rx, body_ry), 0, 0, 360, (20, 60, 140), 2, cv2.LINE_AA)
 
+                # Mata dan hidung mole
+                eye_y = body_cy - 12
+                eye_spacing = 15
+                cv2.circle(frame, (hx - eye_spacing, eye_y), 5, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx + eye_spacing, eye_y), 5, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx - eye_spacing + 1, eye_y), 2, (10, 10, 10), -1, cv2.LINE_AA)
+                cv2.circle(frame, (hx + eye_spacing - 1, eye_y), 2, (10, 10, 10), -1, cv2.LINE_AA)
+
+                nose_y = body_cy + 2
+                cv2.ellipse(frame, (hx, nose_y), (8, 5), 0, 0, 360, (20, 20, 20), -1, cv2.LINE_AA)
+                cv2.line(frame, (hx - 12, nose_y), (hx - 32, nose_y - 2), (220, 220, 220), 1, cv2.LINE_AA)
+                cv2.line(frame, (hx + 12, nose_y), (hx + 32, nose_y - 2), (220, 220, 220), 1, cv2.LINE_AA)
+
+                # Timer melingkar sisa waktu mole
+                timer_color = COLOR_TIMER_NORMAL if time_ratio > 0.3 else COLOR_TIMER_CRITICAL
+                angle_span = int(360 * time_ratio)
                 cv2.ellipse(
                     frame,
-                    (hx, hy + int(mole_r * 0.15)),
-                    (int(mole_r * 0.40), int(mole_r * 0.25)),
+                    (hx, hy),
+                    (r + 6, int((r + 6) * 0.70)),
                     0,
-                    0,
-                    360,
-                    (170, 215, 255),
-                    -1,
+                    -90,
+                    -90 + angle_span,
+                    timer_color,
+                    3,
                     cv2.LINE_AA,
                 )
-                cv2.circle(frame, (hx, hy + int(mole_r * 0.08)), 5, (30, 30, 30), -1, cv2.LINE_AA)
 
-                angle_end = int(360 * ratio)
-                if angle_end > 0:
-                    cv2.ellipse(
-                        frame,
-                        (hx, hy),
-                        (r + 6, r + 6),
-                        -90,
-                        0,
-                        angle_end,
-                        COLOR_PRIMARY_CYAN,
-                        3,
-                        cv2.LINE_AA,
-                    )
+        # Render efek animasi pukulan
+        for effect in hit_effects:
+            prog = effect.get_progress(current_time)
+            ex, ey = effect.position
+            expand_r = int(25 + 55 * prog)
+            alpha_color = (
+                int(COLOR_HIT_FLASH[0] * (1.0 - prog)),
+                int(COLOR_HIT_FLASH[1] * (1.0 - prog)),
+                int(COLOR_HIT_FLASH[2] * (1.0 - prog)),
+            )
 
-        for eff in hit_effects:
-            if eff.is_alive(current_time):
-                p = eff.get_progress(current_time)
-                pulse_r = int(holes[0].radius * (0.8 + p * 1.5))
-                cv2.circle(frame, eff.position, pulse_r, COLOR_HIT_FLASH, 3, cv2.LINE_AA)
-
-                combo_txt = f" +{10 * max(1, eff.combo)}"
-                if eff.combo >= 2:
-                    combo_txt += f" (x{eff.combo} COMBO)"
-
-                float_y = eff.position[1] - int(p * 50)
-                self.draw_text_with_outline(
-                    frame,
-                    f"HIT!{combo_txt}",
-                    (eff.position[0] - 60, float_y),
-                    scale=0.68,
-                    color=COLOR_HIT_FLASH,
-                    thickness=2,
-                )
+            cv2.circle(frame, (ex, ey), expand_r, alpha_color, 3, cv2.LINE_AA)
+            self.draw_text_with_outline(
+                frame,
+                f"WHACK! +{100 * effect.combo}",
+                (ex - 60, ey - expand_r - 8),
+                scale=0.65,
+                color=(0, 255, 120),
+                thickness=2,
+            )
 
     def draw_hand_cursor(
         self,
         frame: np.ndarray,
-        centroid: Optional[Tuple[int, int]],
+        hand_result: Any,
         hover_progress: float = 0.0,
     ) -> None:
-        """Merender reticle kursor bidik di posisi centroid tangan pemain."""
-        if centroid is None:
+        """Merender kursor visual yang membedakan pose HIGH_FIVE (Move/Aim) dan FIST (Click/Whack)."""
+        if hand_result is None or not hand_result.is_detected or hand_result.centroid is None:
             return
 
-        cx, cy = centroid
-        cv2.circle(frame, (cx, cy), 22, COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.circle(frame, (cx, cy), 6, (0, 255, 255), -1, cv2.LINE_AA)
+        cx, cy = hand_result.centroid
 
-        arm = 14
-        cv2.line(frame, (cx - 22 - arm, cy), (cx - 22, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx + 22, cy), (cx + 22 + arm, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx, cy - 22 - arm), (cx, cy - 22), COLOR_RETICLE, 2, cv2.LINE_AA)
-        cv2.line(frame, (cx, cy + 22), (cx, cy + 22 + arm), COLOR_RETICLE, 2, cv2.LINE_AA)
+        if hand_result.is_fist:
+            # 1. Pose FIST (Kepal): Kursor merah penuh dengan efek pukul / WHACK!
+            cv2.circle(frame, (cx, cy), 28, COLOR_FIST, -1, cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 38, (0, 160, 255), 3, cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 10, (255, 255, 255), -1, cv2.LINE_AA)
 
-        if hover_progress > 0.0:
-            angle = int(360 * hover_progress)
-            cv2.ellipse(
+            arm = 16
+            cv2.line(frame, (cx - 38 - arm, cy), (cx - 38, cy), COLOR_FIST, 3, cv2.LINE_AA)
+            cv2.line(frame, (cx + 38, cy), (cx + 38 + arm, cy), COLOR_FIST, 3, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy - 38 - arm), (cx, cy - 38), COLOR_FIST, 3, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy + 38), (cx, cy + 38 + arm), COLOR_FIST, 3, cv2.LINE_AA)
+
+            self.draw_text_with_outline(
                 frame,
-                (cx, cy),
-                (28, 28),
-                -90,
-                0,
-                angle,
-                (0, 255, 120),
-                3,
-                cv2.LINE_AA,
+                "WHACK! (FIST)",
+                (cx - 65, cy - 48),
+                scale=0.62,
+                color=COLOR_FIST,
+                thickness=2,
             )
+
+        elif hand_result.is_high_five:
+            # 2. Pose HIGH_FIVE (Open Palm): Kursor hijau terbuka untuk membidik / MOVE
+            cv2.circle(frame, (cx, cy), 26, COLOR_HIGH_FIVE, 2, cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 6, COLOR_HIGH_FIVE, -1, cv2.LINE_AA)
+
+            arm = 14
+            cv2.line(frame, (cx - 26 - arm, cy), (cx - 26, cy), COLOR_HIGH_FIVE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx + 26, cy), (cx + 26 + arm, cy), COLOR_HIGH_FIVE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy - 26 - arm), (cx, cy - 26), COLOR_HIGH_FIVE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy + 26), (cx, cy + 26 + arm), COLOR_HIGH_FIVE, 2, cv2.LINE_AA)
+
+            self.draw_text_with_outline(
+                frame,
+                "MOVE (OPEN)",
+                (cx - 55, cy - 35),
+                scale=0.55,
+                color=COLOR_HIGH_FIVE,
+                thickness=2,
+            )
+
+        else:
+            # 3. Transisi / Netral
+            cv2.circle(frame, (cx, cy), 22, COLOR_RETICLE, 2, cv2.LINE_AA)
+            cv2.circle(frame, (cx, cy), 5, (0, 255, 255), -1, cv2.LINE_AA)
+
+            arm = 12
+            cv2.line(frame, (cx - 22 - arm, cy), (cx - 22, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx + 22, cy), (cx + 22 + arm, cy), COLOR_RETICLE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy - 22 - arm), (cx, cy - 22), COLOR_RETICLE, 2, cv2.LINE_AA)
+            cv2.line(frame, (cx, cy + 22), (cx, cy + 22 + arm), COLOR_RETICLE, 2, cv2.LINE_AA)
+
+            self.draw_text_with_outline(
+                frame,
+                "AIM",
+                (cx - 20, cy - 30),
+                scale=0.48,
+                color=COLOR_RETICLE,
+                thickness=1,
+            )
+
+    def draw_diagnostic_pip(
+        self,
+        frame: np.ndarray,
+        hand_result: Any,
+    ) -> None:
+        """Merender jendela Picture-in-Picture (PiP) diagnostik untuk demo fitur bentuk PCV ke penguji."""
+        if hand_result is None or hand_result.mask is None:
+            return
+
+        h, w = frame.shape[:2]
+        pip_w, pip_h = 280, 210
+        pip_x, pip_y = w - pip_w - 20, h - pip_h - 20
+
+        mask_gray = hand_result.mask
+        mask_bgr = cv2.cvtColor(mask_gray, cv2.COLOR_GRAY2BGR)
+        pip_canvas = cv2.resize(mask_bgr, (pip_w, pip_h))
+
+        # Skala koordinat dari ukuran frame asli ke ukuran PiP
+        scale_x = pip_w / float(w)
+        scale_y = pip_h / float(h)
+
+        # Gambar garis kontur asli (cyan)
+        if hand_result.contour is not None:
+            scaled_cnt = (hand_result.contour.astype(float) * [scale_x, scale_y]).astype(np.int32)
+            cv2.drawContours(pip_canvas, [scaled_cnt], -1, (255, 200, 0), 1)
+
+        # Gambar garis poligon Convex Hull (hijau tebal)
+        if hand_result.hull is not None:
+            scaled_hull = (hand_result.hull.astype(float) * [scale_x, scale_y]).astype(np.int32)
+            cv2.drawContours(pip_canvas, [scaled_hull], -1, (0, 255, 120), 2)
+
+        # Gambar titik cacat kecembungan (Convexity Defects)
+        for pt in hand_result.defects_pts:
+            px = int(pt[0] * scale_x)
+            py = int(pt[1] * scale_y)
+            cv2.circle(pip_canvas, (px, py), 4, (0, 0, 255), -1)
+            cv2.circle(pip_canvas, (px, py), 6, (0, 255, 255), 1)
+
+        # Border PiP dengan warna sesuai pose
+        border_col = (
+            COLOR_HIGH_FIVE
+            if hand_result.is_high_five
+            else (COLOR_FIST if hand_result.is_fist else COLOR_PRIMARY_CYAN)
+        )
+        cv2.rectangle(frame, (pip_x - 3, pip_y - 3), (pip_x + pip_w + 3, pip_y + pip_h + 3), border_col, 2)
+        frame[pip_y : pip_y + pip_h, pip_x : pip_x + pip_w] = pip_canvas
+
+        # Teks diagnostik PCV di dalam kotak PiP
+        self.draw_text_with_outline(
+            frame,
+            f"DIAGNOSTIK PCV [V] | {hand_result.preset_name}",
+            (pip_x + 6, pip_y + 18),
+            scale=0.38,
+            color=(0, 255, 255),
+            thickness=1,
+        )
+
+        pose_txt = f"POSE: {hand_result.pose}"
+        self.draw_text_with_outline(
+            frame,
+            pose_txt,
+            (pip_x + 6, pip_y + 36),
+            scale=0.44,
+            color=border_col,
+            thickness=2,
+        )
+
+        defects_txt = f"Defek Jari: {hand_result.defect_count} | Solidity: {hand_result.solidity:.2f}"
+        self.draw_text_with_outline(
+            frame,
+            defects_txt,
+            (pip_x + 6, pip_y + 54),
+            scale=0.36,
+            color=(230, 230, 230),
+            thickness=1,
+        )
+
+        ar_txt = f"Aspect Ratio: {hand_result.aspect_ratio:.2f}"
+        self.draw_text_with_outline(
+            frame,
+            ar_txt,
+            (pip_x + 6, pip_y + 70),
+            scale=0.36,
+            color=(200, 200, 200),
+            thickness=1,
+        )
+
+    def draw_mask_pip(self, frame: np.ndarray, mask: np.ndarray) -> None:
+        """Fallback kompatibilitas masker PiP sederhana."""
+        h, w = frame.shape[:2]
+        pip_w, pip_h = 200, 150
+        pip_x, pip_y = w - pip_w - 20, h - pip_h - 20
+
+        mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        small_mask = cv2.resize(mask_bgr, (pip_w, pip_h))
+
+        cv2.rectangle(
+            frame,
+            (pip_x - 2, pip_y - 2),
+            (pip_x + pip_w + 2, pip_y + pip_h + 2),
+            COLOR_PRIMARY_CYAN,
+            2,
+        )
+        frame[pip_y : pip_y + pip_h, pip_x : pip_x + pip_w] = small_mask
 
     def draw_modal_dialog(
         self,
@@ -832,30 +939,3 @@ class UIRenderer:
                 color=(180, 180, 180),
                 thickness=1,
             )
-
-    def draw_mask_pip(self, frame: np.ndarray, mask: np.ndarray) -> None:
-        """Menampilkan jendela kecil Picture-in-Picture untuk memonitor mask segmentasi."""
-        h, w = frame.shape[:2]
-        pip_w, pip_h = 200, 150
-        pip_x, pip_y = w - pip_w - 20, h - pip_h - 20
-
-        mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        small_mask = cv2.resize(mask_bgr, (pip_w, pip_h))
-
-        cv2.rectangle(
-            frame,
-            (pip_x - 2, pip_y - 2),
-            (pip_x + pip_w + 2, pip_y + pip_h + 2),
-            COLOR_PRIMARY_CYAN,
-            2,
-        )
-        frame[pip_y : pip_y + pip_h, pip_x : pip_x + pip_w] = small_mask
-
-        self.draw_text_with_outline(
-            frame,
-            "Mask Kulit (Playing Only)",
-            (pip_x + 5, pip_y + 20),
-            scale=0.45,
-            color=(0, 255, 255),
-            thickness=1,
-        )
