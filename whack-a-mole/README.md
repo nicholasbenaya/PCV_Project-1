@@ -1,58 +1,42 @@
 # Laporan Teknis Proyek 1 - Tipe 3: Whack-A-Mole Virtual Mini-Game (Pure OpenCV)
 
 Mata Kuliah: Praktikum Pengolahan Citra dan Visi Komputer (PCV)  
-Topik: *Virtual Interactive Whack-A-Mole Game Based on HSV Skin Segmentation & Centroid Tracking*  
-Berkas Utama: [`main.py`](main.py) | [`hand_tracker.py`](hand_tracker.py) | [`game_engine.py`](game_engine.py) | [`entities.py`](entities.py) | [`ui_renderer.py`](ui_renderer.py) | [`config.py`](config.py)
+Topik: *Virtual Interactive Whack-A-Mole Game with Adaptive Audio, Multi-Grid, Survival & Level Progression*  
+Berkas Utama: [`main.py`](main.py) | [`game_engine.py`](game_engine.py) | [`hand_tracker.py`](hand_tracker.py) | [`audio_system.py`](audio_system.py) | [`ui_renderer.py`](ui_renderer.py) | [`entities.py`](entities.py) | [`save_manager.py`](save_manager.py) | [`config.py`](config.py)
 
 ---
 
 ## 1. Pendahuluan
 
-**Whack-A-Mole Virtual** adalah game interaktif berbasis visi komputer murni (*pure OpenCV & NumPy*) tanpa pustaka *deep learning* (tanpa MediaPipe, TensorFlow, atau PyTorch). Pemain mengontrol permainan secara *hands-free* di depan webcam: menggerakkan telapak tangan untuk memukul karakter "mole" yang muncul secara acak pada grid 6 lubang (2 baris $\times$ 3 kolom).
+**Whack-A-Mole Virtual** adalah game arcade interaktif berbasis *Computer Vision* murni (**OpenCV `cv2` & NumPy**) tanpa pustaka *deep learning* (tanpa MediaPipe, YOLO, TensorFlow, atau PyTorch). Pemain mengontrol seluruh navigasi menu dan aksi pemukulan mole secara *hands-free* di depan webcam melalui pelacakan titik berat (*centroid*) telapak tangan.
 
-Sistem melacak titik tengah (centroid) tangan pemain secara *real-time* menggunakan segmentasi ruang warna HSV, filter morfologi matematika, dan perhitungan *spatial image moments*.
+Proyek ini dilengkapi dengan:
+1. **Main Menu Interaktif**: Navigasi menggunakan keyboard atau **Virtual Touch** (arahkan kursor tangan di atas tombol selama ~0.85 detik).
+2. **Kustomisasi Grid**: Pilihan ukuran grid lubang $2 \times 2$ (4 lubang), $2 \times 3$ (6 lubang), $3 \times 3$ (9 lubang), dan $3 \times 4$ (12 lubang).
+3. **Mode Permainan Ganda**:
+   - **Mode Survival (Endless High Score)**: Intensitas meningkat secara dinamis seiring durasi bertahan (kecepatan mole menyusut hingga $0.55\text{s}$, kemunculan mole ganda, sistem nyawa 3 HP, dan *multiplier combo*).
+   - **Mode Level Progression (Level 1 - 10)**: Sistem perkembangan 10 level bertahap. Untuk membuka level selanjutnya, pemain **wajib menuntaskan level sebelumnya**. Progres tersimpan permanen di `save_data.json`.
+4. **Sintesis Audio Prosedural & BGM Dinamis Adaptif**: Seluruh efek suara (klik tombol, pukulan *bonk*, mole kabur, *level clear fanfare*, *game over*) serta 4 tingkat loop musik latar *chiptune* disintesis secara matematis menggunakan rumus gelombang NumPy tanpa file audio eksternal. Musik in-game beradaptasi semakin intens dan cepat saat intensitas permainan meningkat.
 
 ---
 
 ## 2. Arsitektur Modular & Desain Sistem
 
-Kode dirancang dengan prinsip *Separation of Concerns* (SoC) dan *Clean Architecture* agar mudah dipelihara (*highly maintainable*):
+Kode dibangun dengan arsitektur bersih (*Clean Code & Separation of Concerns*):
 
 ```text
 whack-a-mole/
 │
-├── config.py           # Parameter konstan: batas warna HSV, ukuran frame, durasi gameplay, warna UI
-├── hand_tracker.py     # Modul Computer Vision: segmentasi warna kulit HSV, morfologi, kontur & centroid EMA
-├── entities.py         # Model data objek: Hole, Mole, HitEffect, dan ScoreManager
-├── ui_renderer.py      # Modul visualisasi OpenCV: HUD semi-transparan, mole kartun, timer radial, panel modal
-├── game_engine.py      # State Machine (START, PLAYING, GAMEOVER), collision detection, dan lifecycle loop
-├── main.py             # Entry point: penanganan kamera, event keyboard, dan integrasi argumen CLI
+├── config.py           # Parameter konstan: batas warna HSV, ukuran frame, definisi 10 level, warna UI
+├── audio_system.py     # Generator gelombang audio sintetis (NumPy stereo PCM) & BGM loop adaptif
+├── save_manager.py     # Persistensi data progres: level unlock, rekor survival, dan preferensi grid
+├── hand_tracker.py     # Modul Vision: segmentasi HSV dual-range, morfologi, kontur & centroid EMA
+├── entities.py         # Model objek: Hole, Mole (multi-mole), HitEffect, ScoreManager, SurvivalTracker, Button
+├── ui_renderer.py      # Modul visualisasi OpenCV: HUD Survival/Level, Mole kartun, modal dialog, & PiP
+├── game_engine.py      # Mesin utama: State Machine (MENU, LEVEL_SELECT, GRID_SELECT, PLAYING, GAMEOVER)
+├── main.py             # Entry point aplikasi: loop kamera, event hotkey, dan eksekusi
+├── save_data.json      # File penyimpanan lokal progres pemain (dibuat otomatis)
 └── README.md           # Laporan teknis dan dokumentasi lengkap
-```
-
-### Diagram Alur Data Sistem
-
-```text
- ┌──────────────┐      ┌─────────────────────────┐      ┌───────────────────────┐
- │ Frame Webcam │ ───> │ cv2.flip (Mode Cermin)  │ ───> │ Gaussian Blur (9 x 9) │
- └──────────────┘      └─────────────────────────┘      └───────────┬───────────┘
-                                                                    │
- ┌──────────────────────┐      ┌───────────────────────┐            ▼
- │ Kontur Terbesar      │ <─── │ Morfologi Open/Close  │ <─── ┌─────────────────┐
- │ (Area >= 2200 px)    │      │ (Kernel Elips 5 x 5)  │      │ Dual-Range HSV  │
- └──────────┬───────────┘      └───────────────────────┘      │ Skin Masking    │
-            │                                                 └─────────────────┘
-            ▼
- ┌──────────────────────┐      ┌───────────────────────┐      ┌─────────────────┐
- │ Spatial Moments      │ ───> │ EMA Smoothing         │ ───> │ Game Engine     │
- │ (cX, cY Centroid)    │      │ (Alpha = 0.65)        │      │ Collision Check │
- └──────────────────────┘      └───────────────────────┘      └────────┬────────┘
-                                                                       │
-                               ┌───────────────────────┐               ▼
-                               │ Output Display Window │ <─── ┌─────────────────┐
-                               │ (60 FPS Interactive)  │      │ UI Renderer     │
-                               └───────────────────────┘      │ HUD, Mole, Vfx  │
-                                                              └─────────────────┘
 ```
 
 ---
@@ -60,95 +44,107 @@ whack-a-mole/
 ## 3. Metodologi Pengolahan Citra Digital (PCD)
 
 ### 3.1. Segmentasi Warna Kulit HSV Dual-Range
-Ruang warna HSV (*Hue, Saturation, Value*) memisahkan kromatisitas (warna) dari luminans (intensitas cahaya), menjadikannya lebih tahan terhadap fluktuasi pencahayaan dibandingkan RGB biasa:
+Memisahkan krominans dari pencahayaan menggunakan model HSV:
 * **Rentang 1 (Oranye–Kuning & Merah Muda):**
   $$H \in [0, 22], \quad S \in [35, 190], \quad V \in [60, 255]$$
 * **Rentang 2 (Pembungkus Rona Merah Pekat / Wrap-Around):**
   $$H \in [170, 180], \quad S \in [35, 190], \quad V \in [60, 255]$$
-* **Penggabungan Masker:**
+* **Penggabungan Masker Biner:**
   $$M_{\text{raw}} = M_1 \lor M_2$$
 
-### 3.2. Operasi Morfologi Matematika
-Masker biner hasil thresholding dibersihkan menggunakan elemen penstruktur elips berukuran $5 \times 5$ ($B$):
+### 3.2. Operasi Morfologi Citra
+Membersihkan noise menggunakan elemen penstruktur elips $5 \times 5$ ($B$):
 $$M_{\text{clean}} = \left( (M_{\text{raw}} \circ B) \bullet B \right) \oplus B$$
-1. **Opening ($M \circ B = (M \ominus B) \oplus B$):** Mengeliminasi derau bintik putih kecil (*salt noise*) di latar belakang.
-2. **Closing ($M \bullet B = (M \oplus B) \ominus B$):** Menutup celah gelap (*pepper noise*) di permukaan telapak tangan.
-3. **Dilasi ($M \oplus B$):** Mempertegas batas tepi kontur tangan sebelum ekstraksi.
+* **Opening ($M \circ B$):** Membuang derau garam (*salt noise*) pada latar belakang.
+* **Closing ($M \bullet B$):** Menutup celah gelap (*pepper noise*) di permukaan telapak tangan.
+* **Dilasi ($M \oplus B$):** Mempertegas batas tepi kontur.
 
-### 3.3. Ekstraksi Titik Berat (*Spatial Moments*)
-Setelah kontur eksternal terbesar diekstraksi dan disaring dengan ambang batas minimal $\text{Area} \ge 2.200\text{ px}$, koordinat centroid $(cX, cY)$ dihitung menggunakan momen spasial citra:
+### 3.3. Ekstraksi Titik Berat (*Spatial Moments*) & EMA Smoothing
+Kontur terbesar disaring dengan ambang batas $\text{Area} \ge 2.200\text{ px}$. Titik tengah $(cX, cY)$ dihitung menggunakan momen spasial orde pertama:
 $$cX_{\text{raw}} = \frac{m_{10}}{m_{00}}, \quad cY_{\text{raw}} = \frac{m_{01}}{m_{00}}$$
-di mana:
-$$m_{ji} = \sum_{x} \sum_{y} x^j y^i I(x, y)$$
-
-### 3.4. Stabilisasi Posisi (*Exponential Moving Average - EMA*)
-Untuk mengeliminasi getaran mikro (*jitter*) pada kursor kordinat tanpa menimbulkan kelambatan (*lag*), diterapkan filter EMA:
+Diterapkan filter *Exponential Moving Average* (EMA) dengan faktor $\alpha = 0.65$:
 $$\mathbf{C}_t = \alpha \mathbf{C}_{\text{raw}} + (1 - \alpha) \mathbf{C}_{t-1}$$
-dengan faktor pembobotan $\alpha = 0.65$.
+Teknik ini menghasilkan kursor bidik yang sangat mulus tanpa getaran mikro (*anti-jitter*).
 
 ---
 
-## 4. Mekanika Permainan & Logika Tabrakan
+## 4. Fitur Gameplay & Mekanika
 
-1. **Grid Arena 2x3:**
-   - 6 lubang galian diposisikan secara dinamis berdasarkan lebar ($W$) dan tinggi ($H$) frame kamera.
-   - Posisi kolom: $X \in \{0.22W, 0.50W, 0.78W\}$.
-   - Posisi baris: $Y \in \{0.42H, 0.76H\}$.
-   - Radius lubang: $R = 0.11 \times \min(W, H)$.
+### 4.1. Navigasi Menu & Sentuhan Virtual (*Virtual Touch*)
+Selain menekan tombol keyboard, pemain dapat mengarahkan kursor tangan ke atas tombol UI. Kursor akan memunculkan lingkaran meteran pengisian progres melingkar selama $0.85\text{ detik}$, yang secara otomatis mengeklik tombol tersebut saat terisi penuh.
 
-2. **Siklus Hidup Mole:**
-   - Mole muncul pada salah satu lubang acak dengan durasi kemunculan antara $1.5$ hingga $2.0$ detik.
-   - Terdapat **indikator busur radial waktu** di sekeliling lubang yang terus berkurang seiring habisnya waktu.
-   - Jika waktu habis tanpa dipukul, mole berpindah lubang secara otomatis ke lubang lain.
+### 4.2. Pilihan Konfigurasi Grid
+Pemain dapat menyesuaikan dimensi arena permainan:
+* **Grid 2x2 (4 Lubang):** Arena ringkas, cocok untuk pemula.
+* **Grid 2x3 (6 Lubang):** Tata letak klasik seimbang (Default).
+* **Grid 3x3 (9 Lubang):** Menantang koordinasi ruang vertikal dan horizontal.
+* **Grid 3x4 (12 Lubang):** Arena luas ekstrem untuk refleks tingkat tinggi.
 
-3. **Deteksi Pukulan (Hit Detection) & Debounce:**
-   - Pukulan dinyatakan valid jika jarak Euclidean antara titik kursor tangan pemain $(cX, cY)$ dan pusat mole $(x_{\text{mole}}, y_{\text{mole}})$ kurang dari atau sama dengan radius lubang:
-     $$\text{distance} = \sqrt{(cX - x_{\text{mole}})^2 + (cY - y_{\text{mole}})^2} \le R$$
-   - **Debounce Cooldown ($0.4\text{ detik}$):** Mencegah pukulan ganda dalam satu gerakan ayunan tangan.
-   - Pukulan yang sukses memicu animasi lingkaran ekspansi hijau dan teks mengambang `+1 HIT!`.
+### 4.3. Mode Survival (Endless High Score)
+* **Sistem Nyawa:** Pemain memiliki 3 HP (Hearts: ❤️❤️❤️). Jika mole kabur sebelum dipukul, nyawa berkurang 1.
+* **Skala Intensitas Dinamis (Tier 1 s.d. 4):**
+  - **Tier 1 (0–18s):** Kecepatan mole $1.60\text{s} - 1.95\text{s}$, 1 mole aktif, BGM santai (~110 BPM).
+  - **Tier 2 (18–36s):** Kecepatan mole $1.25\text{s} - 1.55\text{s}$, 1 mole aktif, BGM aktif (~130 BPM).
+  - **Tier 3 (36–54s):** Kecepatan mole $0.95\text{s} - 1.20\text{s}$, 2 mole simultan, BGM intens (~155 BPM).
+  - **Tier 4 (>54s):** Kecepatan mole $0.60\text{s} - 0.85\text{s}$, 2 mole simultan, BGM ekstrem (~180 BPM).
+* **Combo Multiplier:** Pukulan berturut-turut tanpa jeda mole kabur melipatgandakan perolehan poin ($x1, x2, x3, x4$).
 
-4. **Mesin Status Permainan (State Machine):**
-   - `START`: Layar sambutan, panduan kontrol, dan pratinjau kursor reticle tangan.
-   - `PLAYING`: Sesi berdurasi 30 detik dengan skor berjalan dan hitung mundur timer.
-   - `GAMEOVER`: Modal hasil akhir, rekor skor tertinggi (*High Score*), dan opsi main kembali.
+### 4.4. Mode Level Progression (Level 1 - 10)
+Sistem level bertingkat dengan target pukulan dan batas waktu spesifik:
+* **Level 1 ("Pemanasan"):** Target 8 mole / 30 detik (Kecepatan mole: 1.70s - 2.00s)
+* **Level 2 ("Refleks Cepat"):** Target 10 mole / 30 detik (Kecepatan mole: 1.50s - 1.80s)
+* **Level 3 ("Lubang Lincah"):** Target 12 mole / 30 detik (Kecepatan mole: 1.35s - 1.60s)
+* **Level 4 ("Fokus Ganda"):** Target 14 mole / 28 detik (Kecepatan mole: 1.20s - 1.45s)
+* **Level 5 ("Irama Cepat"):** Target 16 mole / 28 detik (Kecepatan mole: 1.10s - 1.30s)
+* **Level 6 ("Ujian Akurasi"):** Target 18 mole / 26 detik (Kecepatan mole: 1.00s - 1.20s)
+* **Level 7 ("Serbuan Mole"):** Target 20 mole / 25 detik (Kecepatan mole: 0.90s - 1.10s)
+* **Level 8 ("Badai Refleks"):** Target 22 mole / 25 detik (2 mole simultan, Kecepatan: 0.80s - 1.00s)
+* **Level 9 ("Zona Ekstrem"):** Target 25 mole / 25 detik (2 mole simultan, Kecepatan: 0.70s - 0.90s)
+* **Level 10 ("Grandmaster"):** Target 30 mole / 25 detik (2 mole simultan, Kecepatan: 0.55s - 0.75s)
+
+> **Aturan Kunci:** Level $N+1$ hanya dapat dimainkan setelah Level $N$ berhasil diselesaikan (*cleared*).
 
 ---
 
-## 5. Fitur Bantuan: Picture-in-Picture (PiP) Mask View
+## 5. Sintesis Audio Prosedural & BGM Adaptif
 
-Pemain dapat menekan tombol **`M`** untuk menampilkan jendela kecil *Picture-in-Picture* di pojok kanan bawah layar. Fitur ini menampilkan masker biner hasil segmentasi warna kulit secara langsung, sehingga pemain dapat memverifikasi dan menyesuaikan pencahayaan ruangan kelas/kamar secara optimal sebelum bermain.
+Seluruh audio dihasilkan dari formulasi matematis NumPy pada frekuensi sampling $22.050\text{ Hz}$:
+* **Click / Navigasi:** Gelombang sinus $880\text{ Hz}$ dengan peluruhan eksponensial cepat ($\tau = 60$).
+* **Whack / Bonk:** Sapuan frekuensi linier dari $440\text{ Hz}$ turun ke $90\text{ Hz}$ dengan harmonik kedua.
+* **Miss (Kabur):** Gelombang kotak teredam $190\text{ Hz} \to 80\text{ Hz}$.
+* **Level Clear Fanfare:** Arpeggio nada C mayor ($C_5, E_5, G_5, C_6$).
+* **Game Over:** Arpeggio nada minor menurun ($440, 370, 311, 220\text{ Hz}$).
+* **BGM Adaptif 4-Tingkat:** Ritme bassline dan ketukan drum terprogram yang otomatis beralih tempo dan intensitas mengikuti tensi permainan.
 
 ---
 
-## 6. Petunjuk Instalasi & Menjalankan
+## 6. Petunjuk Menjalankan Program
 
-### Persyaratan Sistem
-Pastikan pustaka Python telah terpasang:
+### Persyaratan Pustaka
 ```bash
 pip install -r requirements.txt
 ```
-*(Membutuhkan `opencv-python >= 4.8.0` dan `numpy >= 1.24.0`)*
+*(Memerlukan `opencv-python`, `numpy`, dan `pygame`)*
 
 ### Menjalankan Game
-Dari direktori utama repositori (`project-1`):
+Dari folder utama repositori (`project-1`):
 ```bash
 python whack-a-mole/main.py
 ```
-Atau langsung dari dalam sub-folder `whack-a-mole`:
+Atau dari dalam sub-folder `whack-a-mole`:
 ```bash
 cd whack-a-mole
 python main.py
 ```
 
-### Opsi Argumen Baris Perintah (CLI)
-```bash
-python whack-a-mole/main.py --camera 0 --width 640 --height 480 --duration 45.0
-```
-
-### Kontrol Keyboard
+### Navigasi & Kontrol Keyboard
 | Tombol | Fungsi |
 | :--- | :--- |
-| **`SPASI`** | Memulai permainan dari layar awal (*Start Screen*) |
-| **`R`** | Mengulang permainan (*Restart*) dari layar Game Over |
-| **`M`** | Menyalakan / mematikan jendela Picture-in-Picture (PiP) Mask Kulit |
-| **`Q`** / **`ESC`** | Keluar dari permainan |
+| **`1` - `5`** | Memilih opsi menu pada Menu Utama |
+| **`1` - `9`, `0`** | Memilih Level 1 s.d. 10 pada layar Level Select |
+| **`1` - `4`** | Memilih ukuran Grid pada layar Grid Select |
+| **`SPASI`** | Melanjutkan ke level berikutnya saat Level Clear |
+| **`R`** | Mengulang (*Restart*) sesi permainan saat Game Over |
+| **`S`** | Menyalakan / mematikan master audio (*Toggle Sound*) |
+| **`P`** | Menyalakan / mematikan jendela Picture-in-Picture (PiP) Masker Kulit |
+| **`M`** / **`ESC`** | Kembali ke Menu Utama dari layar mana pun / Keluar |

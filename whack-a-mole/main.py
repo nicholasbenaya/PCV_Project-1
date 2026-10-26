@@ -15,7 +15,6 @@ try:
     from .config import (
         DEFAULT_FRAME_HEIGHT,
         DEFAULT_FRAME_WIDTH,
-        DEFAULT_GAME_DURATION,
         WINDOW_TITLE,
     )
     from .game_engine import GameEngine, GameState
@@ -24,7 +23,6 @@ except ImportError:
     from config import (
         DEFAULT_FRAME_HEIGHT,
         DEFAULT_FRAME_WIDTH,
-        DEFAULT_GAME_DURATION,
         WINDOW_TITLE,
     )
     from game_engine import GameEngine, GameState
@@ -34,7 +32,7 @@ except ImportError:
 def parse_arguments() -> argparse.Namespace:
     """Menguraikan argumen baris perintah saat menjalankan program."""
     parser = argparse.ArgumentParser(
-        description="Game Whack-A-Mole Virtual berbasis OpenCV murni."
+        description="Game Whack-A-Mole Virtual berbasis OpenCV murni dengan Menu & Audio Sintetis."
     )
     parser.add_argument(
         "--camera",
@@ -53,12 +51,6 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=DEFAULT_FRAME_HEIGHT,
         help=f"Tinggi frame kamera (default: {DEFAULT_FRAME_HEIGHT}).",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=DEFAULT_GAME_DURATION,
-        help=f"Durasi per sesi permainan dalam detik (default: {DEFAULT_GAME_DURATION}).",
     )
     return parser.parse_args()
 
@@ -84,7 +76,6 @@ def run_game() -> None:
     game_engine = GameEngine(
         frame_width=args.width,
         frame_height=args.height,
-        game_duration=args.duration,
     )
 
     show_mask_pip = False
@@ -106,7 +97,7 @@ def run_game() -> None:
             # Segmentasi warna kulit dan kalkulasi centroid tangan
             hand_result = hand_tracker.process_frame(frame)
 
-            # Update logika game dan deteksi tabrakan
+            # Update alur game, tabrakan, dan audio
             game_engine.update(hand_result, current_time)
 
             # Render seluruh elemen visual antarmuka
@@ -120,18 +111,84 @@ def run_game() -> None:
             cv2.imshow(WINDOW_TITLE, frame)
 
             key = cv2.waitKey(1) & 0xFF
-            if key in (27, ord("q"), ord("Q")):
-                break
-            elif key == ord(" "):
-                if game_engine.state == GameState.START:
-                    game_engine.start_game(current_time)
-            elif key in (ord("r"), ord("R")):
-                if game_engine.state == GameState.GAMEOVER:
-                    game_engine.restart_game(current_time)
-            elif key in (ord("m"), ord("M")):
+
+            # Penanganan tombol keluar aplikasi secara global
+            if key == 27:  # ESC key
+                if game_engine.state in (GameState.LEVEL_SELECT, GameState.GRID_SELECT):
+                    game_engine.state = GameState.MENU
+                    game_engine.audio.stop_bgm()
+                elif game_engine.state in (GameState.PLAYING_SURVIVAL, GameState.PLAYING_LEVEL):
+                    game_engine.state = GameState.MENU
+                    game_engine.audio.stop_bgm()
+                elif game_engine.state in (GameState.LEVEL_CLEARED, GameState.GAMEOVER):
+                    game_engine.state = GameState.MENU
+                    game_engine.audio.stop_bgm()
+                else:
+                    break
+
+            # Toggle PiP Masker Kulit dengan tombol 'P'
+            elif key in (ord("p"), ord("P")):
                 show_mask_pip = not show_mask_pip
 
+            # Toggle Master Audio dengan tombol 'S'
+            elif key in (ord("s"), ord("S")):
+                game_engine.audio.toggle_sound()
+
+            # Penanganan tombol berdasarkan state aktif
+            elif game_engine.state == GameState.MENU:
+                if key in (ord("q"), ord("Q")):
+                    break
+                elif key == ord("1"):
+                    game_engine.start_survival_mode(current_time)
+                elif key == ord("2"):
+                    game_engine.state = GameState.LEVEL_SELECT
+                elif key == ord("3"):
+                    game_engine.state = GameState.GRID_SELECT
+                elif key == ord("4"):
+                    game_engine.audio.toggle_sound()
+                elif key == ord("5"):
+                    break
+
+            elif game_engine.state == GameState.LEVEL_SELECT:
+                if key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
+                elif ord("1") <= key <= ord("9"):
+                    lvl = key - ord("0")
+                    if lvl <= game_engine.save_manager.unlocked_level:
+                        game_engine.start_level_mode(lvl, current_time)
+                elif key == ord("0"):
+                    if 10 <= game_engine.save_manager.unlocked_level:
+                        game_engine.start_level_mode(10, current_time)
+
+            elif game_engine.state == GameState.GRID_SELECT:
+                if key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
+                elif ord("1") <= key <= ord("4"):
+                    grid_idx = key - ord("1")
+                    game_engine.handle_button_action(f"grid_{grid_idx}", current_time)
+
+            elif game_engine.state == GameState.LEVEL_CLEARED:
+                if key == ord(" "):
+                    if game_engine.current_level < 10:
+                        game_engine.start_level_mode(game_engine.current_level + 1, current_time)
+                    else:
+                        game_engine.state = GameState.MENU
+                elif key in (ord("r"), ord("R")):
+                    game_engine.start_level_mode(game_engine.current_level, current_time)
+                elif key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
+
+            elif game_engine.state == GameState.GAMEOVER:
+                if key in (ord("r"), ord("R")):
+                    if game_engine.survival_tracker is not None:
+                        game_engine.start_survival_mode(current_time)
+                    else:
+                        game_engine.start_level_mode(game_engine.current_level, current_time)
+                elif key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
+
     finally:
+        game_engine.audio.stop_bgm()
         cap.release()
         cv2.destroyAllWindows()
 

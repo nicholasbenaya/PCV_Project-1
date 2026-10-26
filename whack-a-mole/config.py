@@ -1,5 +1,7 @@
-"""Konfigurasi parameter visual, segmentasi citra, dan gameplay Whack-A-Mole."""
+"""Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio."""
 
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 import numpy as np
 
 # Pengaturan kamera webcam
@@ -8,24 +10,63 @@ DEFAULT_FRAME_HEIGHT = 480
 WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual"
 
 # Rentang segmentasi warna kulit manusia pada HSV (H: 0..179 di OpenCV)
-# Rentang pertama: oranye-kuning dan merah muda
 LOWER_SKIN_1 = np.array([0, 35, 60], dtype=np.uint8)
 UPPER_SKIN_1 = np.array([22, 190, 255], dtype=np.uint8)
-# Rentang kedua: menangani pembungkus rona merah pekat (wrap-around 170-180)
 LOWER_SKIN_2 = np.array([170, 35, 60], dtype=np.uint8)
 UPPER_SKIN_2 = np.array([180, 190, 255], dtype=np.uint8)
 
 # Parameter pembersihan kontur dan pelacakan
-MIN_HAND_CONTOUR_AREA = 2200  # Luas piksel minimal untuk menyaring noise latar
-CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA (0.0 = kaku, 1.0 = raw tanpa filter)
+MIN_HAND_CONTOUR_AREA = 2200  # Luas piksel minimal untuk menyaring noise
+CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)
+BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual (detik)
 
-# Parameter gameplay
-DEFAULT_GAME_DURATION = 30.0  # Durasi sesi permainan (detik)
-HIT_DEBOUNCE_COOLDOWN = 0.40  # Interval minimal antar pukulan valid (detik)
-MOLE_MIN_LIFESPAN = 1.50  # Batas bawah durasi kemunculan mole (detik)
-MOLE_MAX_LIFESPAN = 2.00  # Batas atas durasi kemunculan mole (detik)
+# Pilihan preset ukuran grid (baris, kolom)
+GRID_PRESETS: List[Tuple[int, int]] = [
+    (2, 2),  # 4 Lubang - Pemula
+    (2, 3),  # 6 Lubang - Klasik Default
+    (3, 3),  # 9 Lubang - Menantang
+    (3, 4),  # 12 Lubang - Ekstrem Luas
+]
+DEFAULT_GRID_INDEX = 1  # 2x3 sebagai default
+
+# Parameter gameplay umum
+HIT_DEBOUNCE_COOLDOWN = 0.38  # Interval minimal antar pukulan valid (detik)
 HIT_EFFECT_DURATION = 0.45  # Durasi animasi visual pukulan (detik)
+
+# Parameter Mode Survival
+SURVIVAL_INITIAL_LIVES = 3
+SURVIVAL_MAX_LIVES = 5
+SURVIVAL_TIER_INTERVAL = 18.0  # Durasi transisi kenaikan intensitas (detik)
+
+
+@dataclass
+class LevelConfig:
+    """Konfigurasi spesifik per level progression (Level 1 - 10)."""
+
+    level_num: int
+    title: str
+    target_hits: int
+    duration_seconds: float
+    mole_min_lifespan: float
+    mole_max_lifespan: float
+    simultaneous_moles: int
+    bgm_intensity: int  # 1 (Santai) sampai 4 (Ekstrem)
+
+
+# Definisi 10 level bertingkat
+LEVEL_CONFIGS: Dict[int, LevelConfig] = {
+    1: LevelConfig(1, "Pemanasan", 8, 30.0, 1.70, 2.00, 1, 1),
+    2: LevelConfig(2, "Refleks Cepat", 10, 30.0, 1.50, 1.80, 1, 1),
+    3: LevelConfig(3, "Lubang Lincah", 12, 30.0, 1.35, 1.60, 1, 2),
+    4: LevelConfig(4, "Fokus Ganda", 14, 28.0, 1.20, 1.45, 1, 2),
+    5: LevelConfig(5, "Irama Cepat", 16, 28.0, 1.10, 1.30, 1, 2),
+    6: LevelConfig(6, "Ujian Akurasi", 18, 26.0, 1.00, 1.20, 1, 3),
+    7: LevelConfig(7, "Serbuan Mole", 20, 25.0, 0.90, 1.10, 1, 3),
+    8: LevelConfig(8, "Badai Refleks", 22, 25.0, 0.80, 1.00, 2, 3),
+    9: LevelConfig(9, "Zona Ekstrem", 25, 25.0, 0.70, 0.90, 2, 4),
+    10: LevelConfig(10, "Grandmaster", 30, 25.0, 0.55, 0.75, 2, 4),
+}
 
 # Warna BGR untuk rendering UI
 COLOR_PRIMARY_CYAN = (0, 220, 255)
@@ -38,3 +79,8 @@ COLOR_RETICLE = (255, 220, 0)
 COLOR_HOLE_OUTER = (80, 80, 80)
 COLOR_HOLE_INNER = (35, 35, 35)
 COLOR_MOLE_BODY = (40, 120, 225)
+COLOR_BUTTON_BG = (45, 45, 45)
+COLOR_BUTTON_HOVER = (70, 70, 70)
+COLOR_BUTTON_BORDER = (0, 200, 255)
+COLOR_HEART_RED = (0, 0, 235)
+COLOR_LOCKED_GRAY = (90, 90, 90)
