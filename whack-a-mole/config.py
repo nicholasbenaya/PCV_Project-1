@@ -41,8 +41,8 @@ FACE_MIN_INTERNAL_HOLES = 3  # Ambang batas lubang internal mata/mulut
 FACE_MIN_HOLE_AREA = 25.0  # Luas minimal child contour untuk dihitung sebagai lubang
 
 # Parameter "Open-Palm Lock-On" & Nearest-Neighbor Tracking
-LOCKON_MAX_DISTANCE = 160.0  # Radius maksimal pelacakan nearest-neighbor (piksel)
-LOCKON_LOST_TIMEOUT_FRAMES = 16  # Toleransi frame hilang sebelum melepaskan lock-on (~0.5 detik)
+LOCKON_MAX_DISTANCE = 180.0  # Radius maksimal pelacakan nearest-neighbor (piksel)
+LOCKON_LOST_TIMEOUT_FRAMES = 24  # Toleransi frame hilang sebelum melepaskan lock-on (~0.8 detik)
 
 # Parameter pembersihan kontur dan pelacakan
 MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
@@ -56,16 +56,17 @@ POSE_NONE = "NONE"
 POSE_HIGH_FIVE = "HIGH_FIVE"
 POSE_FIST = "FIST"
 
-# Threshold Klasifikasi Hand Pose
-HIGH_FIVE_MIN_DEFECTS = 3
-HIGH_FIVE_MAX_SOLIDITY = 0.78
+# Threshold Klasifikasi 2 Hand Pose Sederhana (HIGH_FIVE move vs FIST whack)
+# Aturan sesuai kebutuhan: minimal deteksi 1 titik merah (defect >= 1) -> HIGH_FIVE, sisanya -> FIST (whack)
+HIGH_FIVE_MIN_DEFECTS = 1  # Minimal 1 titik merah (celah sela jari terbuka)
+HIGH_FIVE_MAX_SOLIDITY = 0.80
 DEFECT_MAX_ANGLE_DEG = 85.0  # Sudut tajam celah sela jari (< 85 derajat)
-DEFECT_MIN_DEPTH_RATIO = 0.10
+DEFECT_MIN_DEPTH_RATIO = 0.08  # Kedalaman minimal celah sela jari
 
-FIST_MAX_DEFECTS = 1
-FIST_MIN_SOLIDITY = 0.82
-FIST_ASPECT_RATIO_MIN = 0.60
-FIST_ASPECT_RATIO_MAX = 1.40
+FIST_MAX_DEFECTS = 0  # 0 titik merah (jari mengepal rapat tanpa celah)
+FIST_MIN_SOLIDITY = 0.80
+FIST_ASPECT_RATIO_MIN = 0.55
+FIST_ASPECT_RATIO_MAX = 1.45
 FIST_FREEZE_DURATION = 0.35  # Durasi pembekuan posisi kursor saat transisi ke FIST (detik)
 
 # Pilihan preset ukuran grid (baris, kolom)

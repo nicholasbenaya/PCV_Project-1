@@ -362,14 +362,10 @@ class HandTracker:
             except cv2.error:
                 valid_defects_count = 0
 
-        raw_pose = POSE_NONE
+        # Klasifikasi 2 Pose: Minimal 1 titik merah (defect >= 1) -> HIGH_FIVE, sisanya -> FIST (Whack)
         if valid_defects_count >= HIGH_FIVE_MIN_DEFECTS or solidity < HIGH_FIVE_MAX_SOLIDITY:
             raw_pose = POSE_HIGH_FIVE
-        elif (
-            valid_defects_count <= FIST_MAX_DEFECTS
-            and solidity > FIST_MIN_SOLIDITY
-            and (FIST_ASPECT_RATIO_MIN <= aspect_ratio <= FIST_ASPECT_RATIO_MAX)
-        ):
+        else:
             raw_pose = POSE_FIST
 
         return raw_pose, valid_defects_count, solidity, aspect_ratio, defect_pts, hull_points
@@ -484,12 +480,12 @@ class HandTracker:
         chosen_candidate = None
 
         if not self.is_hand_locked:
-            # Belum terkunci: HANYA BOLEH mengunci kontur yang memenuhi syarat HIGH_FIVE ketat
+            # Belum terkunci: HANYA BOLEH mengunci kontur yang memenuhi syarat HIGH_FIVE (minimal 1 titik merah sela jari)
             for cand in candidate_data:
                 cnt, (cx, cy), area, holes, defects, solidity, ar, defect_pts, hull, raw_pose = cand
 
-                # Kunci Open-Palm Lock-On: Defek celah jari >= 3 dan Solidity < 0.82
-                if defects >= HIGH_FIVE_MIN_DEFECTS and solidity <= 0.82:
+                # Kunci Open-Palm Lock-On: Ada minimal 1 titik defek sela jari atau bentuk telapak terbuka
+                if defects >= HIGH_FIVE_MIN_DEFECTS or solidity < HIGH_FIVE_MAX_SOLIDITY:
                     self.is_hand_locked = True
                     self.last_hand_centroid = (cx, cy)
                     self.lock_lost_frames = 0
@@ -527,7 +523,7 @@ class HandTracker:
                 )
 
         else:
-            # Sudah terkunci: Cari kontur kandidat terdekat dari posisi terakhir (Nearest-Neighbor)
+            # Sudah terkunci: KUNCI KETAT PADA OBJEK TANGAN TERSEBUT, JANGAN BERPINDAH KE OBJEK LAIN!
             if self.last_hand_centroid is not None:
                 lx, ly = self.last_hand_centroid
                 in_range_cands = []
@@ -536,10 +532,10 @@ class HandTracker:
                     cx, cy = cand[1]
                     dist = math.hypot(cx - lx, cy - ly)
                     if dist <= LOCKON_MAX_DISTANCE:
-                        # Prioritaskan kontur yang memiliki pose valid (HIGH_FIVE atau FIST)
-                        # Kontur amorf tanpa pose (seperti sisa rambut) diberi penalti jarak agar tidak membajak kursor
+                        # Prioritaskan kontur yang paling dekat dari posisi terakhir tangan
+                        # Berikan penalti jarak pada kontur amorf agar objek lain tidak pernah merebut kursor
                         raw_pose = cand[9]
-                        pose_penalty = 0.0 if raw_pose in (POSE_HIGH_FIVE, POSE_FIST) else 50.0
+                        pose_penalty = 0.0 if raw_pose in (POSE_HIGH_FIVE, POSE_FIST) else 80.0
                         in_range_cands.append((dist + pose_penalty, cand))
 
                 if in_range_cands:
@@ -550,23 +546,26 @@ class HandTracker:
                 else:
                     self.lock_lost_frames += 1
                     if self.lock_lost_frames > LOCKON_LOST_TIMEOUT_FRAMES:
-                        # Tangan keluar dari layar / hilang melebihi batas toleransi -> Lepas kunci
+                        # Tangan benar-benar keluar dari layar (> 0.8 detik) -> baru lepas kunci
                         self.is_hand_locked = False
                         self.last_hand_centroid = None
                         self.lock_lost_frames = 0
 
+            # Jika sementara hilang dalam 1-2 frame, tahan kursor pada koordinat terakhir tangan agar tidak melompat ke objek lain
             if chosen_candidate is None:
-                self.pose_history.append(POSE_NONE)
+                hold_pos = self.last_hand_centroid
+                hold_pose = self.prev_smoothed_pose if self.prev_smoothed_pose != POSE_NONE else POSE_HIGH_FIVE
+                self.pose_history.append(hold_pose)
                 return HandTrackingResult(
-                    centroid=None,
-                    raw_centroid=None,
-                    stabilized_centroid=None,
-                    pose=POSE_NONE,
-                    raw_pose=POSE_NONE,
+                    centroid=hold_pos,
+                    raw_centroid=hold_pos,
+                    stabilized_centroid=hold_pos,
+                    pose=hold_pose,
+                    raw_pose=hold_pose,
                     is_detected=False,
                     is_locked=self.is_hand_locked,
-                    is_fist=False,
-                    is_high_five=False,
+                    is_fist=(hold_pose == POSE_FIST),
+                    is_high_five=(hold_pose == POSE_HIGH_FIVE),
                     is_fist_click=False,
                     contour=None,
                     hull=None,

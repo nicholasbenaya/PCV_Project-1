@@ -91,9 +91,9 @@ Sistem **tidak pernah** langsung memilih kontur terbesar di layar (yang sering k
    - Jika tangan keluar dari layar selama $> 16\text{ frame}$ (~0.5 detik), kunci dilepas otomatis dan sistem kembali ke fase pencarian.
 
 ### 3.4. Pilar 4: Ekstraksi Fitur Bentuk, Klasifikasi Pose, & Cursor Freeze
-- **Klasifikasi Pose**:
-  - `HIGH_FIVE`: $\text{Defects} \ge 3 \lor \text{Solidity} < 0.78$.
-  - `FIST`: $\text{Defects} \le 1 \land \text{Solidity} > 0.82 \land 0.60 \le AR \le 1.40$.
+- **Klasifikasi 2 Pose**:
+  - `HIGH_FIVE` (Move / Hover): Terdeteksi jika terdapat **minimal 1 titik merah sela jari terbuka** ($\text{Defects} \ge 1 \lor \text{Solidity} < 0.80$).
+  - `FIST` (Whack / Click): Sisanya, yaitu saat jari mengepal rapat tanpa celah sela jari ($\text{Defects} == 0 \land \text{Solidity} \ge 0.80$).
 - **Temporal Smoothing**: Buffer voting 5 frame untuk menghilangkan kedipan transisi.
 - **Cursor Position Freeze**: Saat transisi ke *FIST*, posisi kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$, menjamin pukulan mole tetap akurat.
 

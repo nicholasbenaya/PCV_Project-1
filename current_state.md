@@ -45,20 +45,21 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 - Kontur dicari dengan mode `cv2.RETR_CCOMP` pada masker sebelum morphological closing besar.
 - Menghitung jumlah child contour internal dengan luas $\ge 25\text{ px}$. Karena wajah memiliki mata, alis, dan mulut yang menghasilkan $\ge 3$ lubang internal, kontur dengan $\ge 3$ lubang dan defek celah jari $< 2$ **otomatis ditolak sebagai wajah**.
 
-### C. Pilar 3: Open-Palm Lock-On & Nearest-Neighbor Tracking
+### C. Pilar 3: Open-Palm Lock-On & Sticky Object Tracking
 - **State Belum Terkunci (`is_hand_locked == False`)**:
-  - Sistem HANYA mengunci kontur yang memenuhi syarat telapak tangan terbuka (*HIGH_FIVE*) secara ketat:
-    $$\text{Valid Defects} \ge 3 \quad (\text{sudut } \theta < 85^{\circ}) \quad \land \quad \text{Solidity} \le 0.82$$
-  - Wajah atau benda bulat tidak akan pernah lolos syarat ini. Begitu ditemukan, sistem mengaktifkan lock-on dan menyimpan posisi centroid $(cX, cY)$.
-- **State Terkunci (`is_hand_locked == True`)**:
-  - Pada frame berikutnya, sistem melacak kontur kandidat terdekat dari posisi terakhir (jarak Euclidean $\le 160\text{ px}$).
-  - Ketika tangan berubah dari telapak terbuka menjadi kepalan tangan (*FIST*), posisi kepalan berada di koordinat yang sama ($d < 60\text{ px}$), sehingga kepalan tetap terlacak dengan stabil tanpa melompat ke kepala.
-  - Jika tangan ditarik keluar dari layar selama $> 16\text{ frame}$, kunci dilepas otomatis dan sistem kembali ke mode pencarian Open Palm.
+  - Sistem mencari kontur telapak tangan terbuka (*HIGH_FIVE*) dengan syarat:
+    $$\text{Valid Defects} \ge 1 \quad (\text{minimal 1 titik merah sela jari}) \quad \lor \quad \text{Solidity} < 0.80$$
+  - Begitu ditemukan, sistem mengaktifkan lock-on dan mengunci objek tersebut.
+- **State Terkunci (`is_hand_locked == True`) - Sticky Locking**:
+  - Sistem mengunci ketat hanya pada objek tangan tersebut dalam radius $\le 180\text{ px}$.
+  - Tidak akan pernah melompat ke objek lain (rambut, wajah, latar belakang). Kontur tanpa pose diberi penalti jarak (+80 px).
+  - Jika tangan tertutup sejenak (occlusion 1-2 frame), sistem menahan kursor pada koordinat terakhir tangan dan tidak melompat.
+  - Kunci hanya dilepas jika tangan benar-benar ditarik keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik).
 
-### D. Pilar 4: Ekstraksi Fitur Geometri Bentuk, Pose, & Cursor Freeze
-- `HIGH_FIVE` (Open Palm): Berfungsi mengarahkan kursor bidikan di layar. Kursor berwarna hijau terbuka dengan label `"MOVE (OPEN)"`. Tidak memukul mole dan tidak memilih menu.
-- `FIST` (Kepalan Tangan): Berfungsi memukul mole (**WHACK!**) atau mengeklik tombol menu. Kursor berwarna merah pekat dengan efek impak dan label `"WHACK! (FIST)"`.
-- **Cursor Freeze Damping**: Saat mengepalkan tangan, posisi kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$, menjamin pukulan tetap akurat mengenai lubang mole atau tombol yang dibidik.
+### D. Pilar 4: Ekstraksi Fitur 2 Pose Sederhana (HIGH_FIVE vs FIST)
+- **`HIGH_FIVE` (Move / Open Palm)**: Terdeteksi jika ada **minimal 1 titik merah sela jari** ($\text{Defects} \ge 1 \lor \text{Solidity} < 0.80$). Berfungsi menggerakkan kursor.
+- **`FIST` (Whack / Click)**: Sisanya, yaitu saat tidak ada titik merah sela jari ($\text{Defects} == 0 \land \text{Solidity} \ge 0.80$, kepalan tangan tertutup rapat). Berfungsi memukul mole atau memilih menu.
+- **Cursor Freeze Damping**: Saat transisi ke FIST, kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$ agar pukulan tidak meleset.
 
 ### E. Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)
 - Menampilkan jendela Picture-in-Picture di pojok layar beresolusi $280 \times 210\text{ px}$ yang memvisualisasikan:
