@@ -60,11 +60,19 @@ $$M_{\text{clean}} = \left( (M_{\text{raw}} \circ B) \bullet B \right) \oplus B$
 * **Dilasi ($M \oplus B$):** Mempertegas batas tepi kontur.
 
 ### 3.3. Ekstraksi Titik Berat (*Spatial Moments*) & EMA Smoothing
-Kontur terbesar disaring dengan ambang batas $\text{Area} \ge 2.200\text{ px}$. Titik tengah $(cX, cY)$ dihitung menggunakan momen spasial orde pertama:
+Titik tengah $(cX, cY)$ dihitung menggunakan momen spasial orde pertama:
 $$cX_{\text{raw}} = \frac{m_{10}}{m_{00}}, \quad cY_{\text{raw}} = \frac{m_{01}}{m_{00}}$$
 Diterapkan filter *Exponential Moving Average* (EMA) dengan faktor $\alpha = 0.65$:
 $$\mathbf{C}_t = \alpha \mathbf{C}_{\text{raw}} + (1 - \alpha) \mathbf{C}_{t-1}$$
 Teknik ini menghasilkan kursor bidik yang sangat mulus tanpa getaran mikro (*anti-jitter*).
+
+### 3.4. Heuristik Multi-Candidate Scoring Anti-Wajah & Temporal Lock
+Untuk mencegah kursor terkunci pada kepala atau wajah pemain di tengah layar:
+1. **Penyaringan Multi-Kandidat**: Menilai seluruh kontur yang memenuhi ambang batas $1.800 \le \text{Area} \le 75.000\text{ px}$.
+2. **Penalti Zona Wajah**: Kontur dengan pusat massa di area atas-tengah ($y < 0.38H$ dan $|x - 0.5W| < 0.20W$) yang berbentuk oval pekat ($\text{Solidity} > 0.82$) diberikan penalti besar ($-4.500\text{ poin}$).
+3. **Bonus Zona Bermain & Geometri Tangan**: Kontur di zona bermain aktif serta memiliki cacat kecembungan (*convexity defects* celah jari) mendapat bonus $+2.000$ hingga $+3.500\text{ poin}$.
+4. **Temporal Hand Tracking Lock**: Kontur yang dekat dengan posisi tangan frame sebelumnya ($\Delta d < 200\text{ px}$) diberikan bonus pelacakan tinggi sehingga kursor mengunci gerakan tangan saat di-*drag* ke sudut layar mana pun tanpa melompat ke wajah.
+5. **Mode Kalibrasi Cepat (Tombol `C`)**: Pemain dapat menekan tombol `C` untuk mengambil sampel warna kulit telapak tangan pada kondisi pencahayaan ruangan saat bermain.
 
 ---
 
@@ -143,7 +151,8 @@ python main.py
 | **`1` - `5`** | Memilih opsi menu pada Menu Utama |
 | **`1` - `9`, `0`** | Memilih Level 1 s.d. 10 pada layar Level Select |
 | **`1` - `4`** | Memilih ukuran Grid pada layar Grid Select |
-| **`SPASI`** | Melanjutkan ke level berikutnya saat Level Clear |
+| **`C`** | Masuk ke Mode Kalibrasi Warna Kulit (Arahkan tangan ke kotak hijau lalu tekan SPASI) |
+| **`SPASI`** | Melanjutkan ke level berikutnya saat Level Clear / Kunci kalibrasi |
 | **`R`** | Mengulang (*Restart*) sesi permainan saat Game Over |
 | **`S`** | Menyalakan / mematikan master audio (*Toggle Sound*) |
 | **`P`** | Menyalakan / mematikan jendela Picture-in-Picture (PiP) Masker Kulit |

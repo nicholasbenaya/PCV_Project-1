@@ -10,13 +10,18 @@ DEFAULT_FRAME_HEIGHT = 480
 WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual"
 
 # Rentang segmentasi warna kulit manusia pada HSV (H: 0..179 di OpenCV)
-LOWER_SKIN_1 = np.array([0, 35, 60], dtype=np.uint8)
-UPPER_SKIN_1 = np.array([22, 190, 255], dtype=np.uint8)
-LOWER_SKIN_2 = np.array([170, 35, 60], dtype=np.uint8)
-UPPER_SKIN_2 = np.array([180, 190, 255], dtype=np.uint8)
+LOWER_SKIN_1 = np.array([0, 30, 50], dtype=np.uint8)
+UPPER_SKIN_1 = np.array([25, 210, 255], dtype=np.uint8)
+LOWER_SKIN_2 = np.array([170, 30, 50], dtype=np.uint8)
+UPPER_SKIN_2 = np.array([180, 210, 255], dtype=np.uint8)
+
+# Rentang segmentasi warna kulit YCrCb (invarian pencahayaan)
+LOWER_SKIN_YCRCB = np.array([0, 133, 77], dtype=np.uint8)
+UPPER_SKIN_YCRCB = np.array([255, 175, 127], dtype=np.uint8)
 
 # Parameter pembersihan kontur dan pelacakan
-MIN_HAND_CONTOUR_AREA = 2200  # Luas piksel minimal untuk menyaring noise
+MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
+MAX_HAND_CONTOUR_AREA = 75000  # Batas atas untuk mengeliminasi badan/torso/dinding
 CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)
 BUTTON_HOVER_TRIGGER_TIME = 0.85  # Waktu tahan kursor tangan untuk klik virtual (detik)

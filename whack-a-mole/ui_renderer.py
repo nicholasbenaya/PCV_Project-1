@@ -200,7 +200,7 @@ class UIRenderer:
             self.draw_button(frame, btn, current_time)
 
         # Petunjuk interaksi bawah
-        hint = "Arahkan tangan ke tombol untuk memilih, atau gunakan tombol angka [1-5]"
+        hint = "Hover tangan di tombol atau tekan [1-5] | [C] Kalibrasi Kulit | [P] Mask PiP"
         h_size = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.44, 1)[0]
         self.draw_text_with_outline(
             frame,
@@ -758,5 +758,36 @@ class UIRenderer:
             (pip_x + 5, pip_y + 18),
             scale=0.45,
             color=(0, 255, 255),
+            thickness=1,
+        )
+
+    def draw_calibration_box(self, frame: np.ndarray, box_rect: Tuple[int, int, int, int]) -> None:
+        """Merender kotak panduan kalibrasi warna kulit di tengah frame."""
+        x1, y1, x2, y2 = box_rect
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 120), 2)
+        cv2.circle(frame, ((x1 + x2) // 2, (y1 + y2) // 2), 6, (0, 255, 120), -1)
+
+        self.draw_text_with_outline(
+            frame,
+            "MODE KALIBRASI WARNA KULIT",
+            (x1 - 35, y1 - 25),
+            scale=0.62,
+            color=(0, 255, 120),
+            thickness=2,
+        )
+        self.draw_text_with_outline(
+            frame,
+            "Arahkan telapak tangan ke dalam kotak hijau",
+            (x1 - 65, y2 + 25),
+            scale=0.50,
+            color=(240, 240, 240),
+            thickness=1,
+        )
+        self.draw_text_with_outline(
+            frame,
+            "Tekan [ENTER] atau [SPASI] untuk Kunci Kalibrasi | [C] Batal",
+            (x1 - 90, y2 + 48),
+            scale=0.44,
+            color=(0, 220, 255),
             thickness=1,
         )

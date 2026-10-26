@@ -108,13 +108,34 @@ def run_game() -> None:
                 show_mask_pip=show_mask_pip,
             )
 
+            # Render overlay mode kalibrasi jika sedang aktif
+            if hand_tracker.calibration_mode:
+                calib_w, calib_h = 200, 200
+                bx1, by1 = (w - calib_w) // 2, (h - calib_h) // 2
+                bx2, by2 = bx1 + calib_w, by1 + calib_h
+                game_engine.renderer.draw_calibration_box(frame, (bx1, by1, bx2, by2))
+
             cv2.imshow(WINDOW_TITLE, frame)
 
             key = cv2.waitKey(1) & 0xFF
 
+            # Penanganan kalibrasi warna kulit dengan tombol 'C'
+            if key in (ord("c"), ord("C")):
+                hand_tracker.calibration_mode = not hand_tracker.calibration_mode
+
+            elif hand_tracker.calibration_mode and key in (13, 32):  # ENTER atau SPASI untuk kunci kalibrasi
+                calib_w, calib_h = 200, 200
+                bx1, by1 = (w - calib_w) // 2, (h - calib_h) // 2
+                bx2, by2 = bx1 + calib_w, by1 + calib_h
+                roi = frame[by1:by2, bx1:bx2]
+                hand_tracker.calibrate_skin_sample(roi)
+                game_engine.audio.play_sfx("click")
+
             # Penanganan tombol keluar aplikasi secara global
-            if key == 27:  # ESC key
-                if game_engine.state in (GameState.LEVEL_SELECT, GameState.GRID_SELECT):
+            elif key == 27:  # ESC key
+                if hand_tracker.calibration_mode:
+                    hand_tracker.calibration_mode = False
+                elif game_engine.state in (GameState.LEVEL_SELECT, GameState.GRID_SELECT):
                     game_engine.state = GameState.MENU
                     game_engine.audio.stop_bgm()
                 elif game_engine.state in (GameState.PLAYING_SURVIVAL, GameState.PLAYING_LEVEL):
