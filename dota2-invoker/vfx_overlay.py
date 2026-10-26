@@ -37,29 +37,31 @@ class Particle:
 
 
 class VFXOverlay:
-    def __init__(self):
+    def __init__(self, minimalist_mode: bool = True):
         self.angle: float = 0.0
         self.particles: List[Particle] = []
         self.last_time: float = time.time()
         self.spell_banner: str = ""
         self.spell_banner_timer: float = 0.0
+        self.minimalist_mode: bool = minimalist_mode
 
     def trigger_spell_burst(self, cx: int, cy: int, spell_name: str, color: Tuple[int, int, int]):
-        """Memicu ledakan partikel sihir dan banner pengumuman mantra."""
+        """Memicu banner pengumuman mantra yang bersih."""
         self.spell_banner = spell_name
-        self.spell_banner_timer = 2.0  # Durasi teks 2 detik
+        self.spell_banner_timer = 0.8  # Durasi banner ringkas (0.8 detik)
 
-        for _ in range(35):
-            spd = np.random.uniform(40, 260)
-            rad = np.random.uniform(0, 2 * math.pi)
-            vx = spd * math.cos(rad)
-            vy = spd * math.sin(rad)
-            p_color = (
-                int(np.clip(color[0] + np.random.randint(-30, 30), 0, 255)),
-                int(np.clip(color[1] + np.random.randint(-30, 30), 0, 255)),
-                int(np.clip(color[2] + np.random.randint(-30, 30), 0, 255)),
-            )
-            self.particles.append(Particle(cx, cy, vx, vy, p_color, np.random.uniform(4, 9), np.random.uniform(0.4, 0.9)))
+        if not self.minimalist_mode:
+            for _ in range(35):
+                spd = np.random.uniform(40, 260)
+                rad = np.random.uniform(0, 2 * math.pi)
+                vx = spd * math.cos(rad)
+                vy = spd * math.sin(rad)
+                p_color = (
+                    int(np.clip(color[0] + np.random.randint(-30, 30), 0, 255)),
+                    int(np.clip(color[1] + np.random.randint(-30, 30), 0, 255)),
+                    int(np.clip(color[2] + np.random.randint(-30, 30), 0, 255)),
+                )
+                self.particles.append(Particle(cx, cy, vx, vy, p_color, np.random.uniform(4, 9), np.random.uniform(0.4, 0.9)))
 
     def draw_magic_circle(self, canvas: np.ndarray, cx: int, cy: int, radius: int, color: Tuple[int, int, int]):
         """Menggambar lingkaran sihir geometris berlapis yang berputar secara prosedural."""
@@ -153,37 +155,42 @@ class VFXOverlay:
                 "DUAL_PALM": (255, 200, 255)
             }
             seal_color = color_map.get(seal, (200, 200, 200))
-            radius = int(80 + 35 * progress)
+            radius = 45
 
-            self.draw_magic_circle(overlay, cx, cy, radius, seal_color)
-            self.draw_elemental_sparks(overlay, cx, cy, seal)
+            if not self.minimalist_mode:
+                self.draw_magic_circle(overlay, cx, cy, int(80 + 35 * progress), seal_color)
+                self.draw_elemental_sparks(overlay, cx, cy, seal)
+            else:
+                # Indikator target sederhana & elegan
+                cv2.circle(overlay, (cx, cy), radius, seal_color, 2, cv2.LINE_AA)
+                cv2.circle(overlay, (cx, cy), 4, seal_color, -1, cv2.LINE_AA)
 
-            # Circular Progress Meter
+            # Circular Progress Meter saat menahan pose
             if progress > 0.0:
-                axes = (radius + 18, radius + 18)
-                cv2.ellipse(overlay, (cx, cy), axes, 0, -90, -90 + int(360 * progress), (0, 255, 255), 4, cv2.LINE_AA)
+                axes = (radius + 12, radius + 12)
+                cv2.ellipse(overlay, (cx, cy), axes, 0, -90, -90 + int(360 * progress), (0, 255, 230), 4, cv2.LINE_AA)
 
-        # Update Partikel
-        self.particles = [p for p in self.particles if p.update(dt)]
-        for p in self.particles:
-            p.draw(overlay)
+        # Update Partikel (hanya jika bukan mode minimalis)
+        if not self.minimalist_mode:
+            self.particles = [p for p in self.particles if p.update(dt)]
+            for p in self.particles:
+                p.draw(overlay)
+            cv2.addWeighted(overlay, 0.88, frame, 0.12, 0, frame)
+        else:
+            # Pada mode minimalis, langsung timpa tanpa blend berat untuk frame rate 60 FPS maksimal
+            cv2.addWeighted(overlay, 0.95, frame, 0.05, 0, frame)
 
-        # Blend overlay semi-transparan dengan frame asli
-        cv2.addWeighted(overlay, 0.88, frame, 0.12, 0, frame)
-
-        # 2. Render Banner Pengumuman Jurus (Jika baru saja quick-cast)
+        # 2. Render Banner Pengumuman Jurus (Jika baru saja terpicu)
         if self.spell_banner_timer > 0.0:
             self.spell_banner_timer -= dt
-            alpha_b = min(1.0, self.spell_banner_timer)
             h, w = frame.shape[:2]
             text = f"★ {self.spell_banner} ★"
             font = cv2.FONT_HERSHEY_DUPLEX
-            t_size = cv2.getTextSize(text, font, 1.2, 3)[0]
+            t_size = cv2.getTextSize(text, font, 1.0, 2)[0]
             tx = (w - t_size[0]) // 2
-            ty = int(h * 0.32)
+            ty = int(h * 0.28)
 
-            # Background Box semi-gelap
-            cv2.rectangle(frame, (tx - 25, ty - 40), (tx + t_size[0] + 25, ty + 18), (15, 15, 25), -1)
-            cv2.rectangle(frame, (tx - 25, ty - 40), (tx + t_size[0] + 25, ty + 18), (0, 215, 255), 2)
-            cv2.putText(frame, text, (tx, ty), font, 1.2, (0, 240, 255), 3, cv2.LINE_AA)
-            cv2.putText(frame, text, (tx, ty), font, 1.2, (255, 255, 255), 1, cv2.LINE_AA)
+            # Background Box bersih semi-transparan
+            cv2.rectangle(frame, (tx - 20, ty - 32), (tx + t_size[0] + 20, ty + 14), (20, 24, 32), -1)
+            cv2.rectangle(frame, (tx - 20, ty - 32), (tx + t_size[0] + 20, ty + 14), (0, 230, 255), 2)
+            cv2.putText(frame, text, (tx, ty), font, 1.0, (0, 240, 255), 2, cv2.LINE_AA)

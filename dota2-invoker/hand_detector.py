@@ -36,27 +36,37 @@ class HandSealDetector:
         # Temporal Debounce / Hold state
         self.candidate_seal: Optional[str] = None
         self.candidate_frames: int = 0
-        self.required_hold_frames: int = 6  # ~0.2 detik pada 30 FPS
+        self.required_hold_frames: int = 5  # ~0.16 detik (responsif & minim delay)
         self.last_trigger_time: float = 0.0
-        self.cooldown_sec: float = 0.55
+        self.cooldown_sec: float = 0.40
 
         # Custom calibration values
         self.is_calibrated: bool = False
         self.calibration_active: bool = False
+        self.calib_info: Dict[str, Any] = {}
 
-    def calibrate_skin_sample(self, roi_bgr: np.ndarray):
+    def reset_default_calibration(self):
+        """Mengembalikan ambang batas warna kulit ke standar universal."""
+        self.ycrcb_lower = np.array([0, 133, 77], dtype=np.uint8)
+        self.ycrcb_upper = np.array([255, 173, 127], dtype=np.uint8)
+        self.hsv_lower = np.array([0, 25, 40], dtype=np.uint8)
+        self.hsv_upper = np.array([30, 220, 255], dtype=np.uint8)
+        self.is_calibrated = False
+        self.calib_info = {}
+        print("[PCV Calibration] Ambang batas warna kulit dikembalikan ke default universal.")
+
+    def calibrate_skin_sample(self, roi_bgr: np.ndarray) -> Dict[str, Any]:
         """Kalibrasi ambang batas warna kulit secara interaktif dari ROI sampel."""
         ycrcb_roi = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2YCrCb)
         hsv_roi = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV)
 
         # YCrCb mean & std
         mean_y, std_y = cv2.meanStdDev(ycrcb_roi)
-        # Ambil Cr dan Cb dengan toleransi std
         cr_mean, cr_std = mean_y[1][0], std_y[1][0]
         cb_mean, cb_std = mean_y[2][0], std_y[2][0]
 
-        cr_tol = max(20, int(cr_std * 2.8))
-        cb_tol = max(20, int(cb_std * 2.8))
+        cr_tol = max(22, int(cr_std * 3.0))
+        cb_tol = max(22, int(cb_std * 3.0))
 
         self.ycrcb_lower = np.array([0, max(0, int(cr_mean - cr_tol)), max(0, int(cb_mean - cb_tol))], dtype=np.uint8)
         self.ycrcb_upper = np.array([255, min(255, int(cr_mean + cr_tol)), min(255, int(cb_mean + cb_tol))], dtype=np.uint8)
@@ -65,13 +75,20 @@ class HandSealDetector:
         mean_hsv, std_hsv = cv2.meanStdDev(hsv_roi)
         h_mean, h_std = mean_hsv[0][0], std_hsv[0][0]
         s_mean, s_std = mean_hsv[1][0], std_hsv[1][0]
-        h_tol = max(15, int(h_std * 2.5))
-        s_tol = max(35, int(s_std * 2.5))
+        h_tol = max(18, int(h_std * 2.8))
+        s_tol = max(40, int(s_std * 2.8))
         self.hsv_lower = np.array([max(0, int(h_mean - h_tol)), max(20, int(s_mean - s_tol)), 30], dtype=np.uint8)
         self.hsv_upper = np.array([min(180, int(h_mean + h_tol)), min(255, int(s_mean + s_tol)), 255], dtype=np.uint8)
 
         self.is_calibrated = True
-        print(f"[PCV Calibration] YCrCb: Cr({self.ycrcb_lower[1]}-{self.ycrcb_upper[1]}), Cb({self.ycrcb_lower[2]}-{self.ycrcb_upper[2]}), HSV: H({self.hsv_lower[0]}-{self.hsv_upper[0]})")
+        self.calib_info = {
+            "cr_range": (int(self.ycrcb_lower[1]), int(self.ycrcb_upper[1])),
+            "cb_range": (int(self.ycrcb_lower[2]), int(self.ycrcb_upper[2])),
+            "h_range": (int(self.hsv_lower[0]), int(self.hsv_upper[0])),
+            "mean_bgr": [int(x) for x in cv2.mean(roi_bgr)[:3]]
+        }
+        print(f"[PCV Calibration] Berhasil: Cr{self.calib_info['cr_range']}, Cb{self.calib_info['cb_range']}, H{self.calib_info['h_range']}")
+        return self.calib_info
 
     def get_skin_mask(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Segmentasi warna kulit multi-model warna (YCrCb & HSV) + Morfologi Citra."""
