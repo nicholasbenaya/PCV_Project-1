@@ -1,8 +1,8 @@
 # Status Terkini Proyek: PCV Project 1 (Praktikum Pengolahan Citra & Visi Komputer)
 
-**Terakhir Diperbarui**: 27 Oktober 2026, 07:22 WIB  
+**Terakhir Diperbarui**: 27 Oktober 2026, 07:35 WIB  
 **Repositori**: [`https://github.com/nicholasbenaya/PCV_Project-1`](https://github.com/nicholasbenaya/PCV_Project-1)  
-**Cabang Aktif**: `safe-area` (Branch Baru Khusus Partisi Safe Area)  
+**Cabang Aktif**: `safe-area` (Branch Baru Khusus Partisi Safe Area & Dynamic Whack Timing)  
 **Lingkungan**: Python 3.12, OpenCV 5.0 / 4.x, NumPy, Pygame (Audio Sintetis)  
 
 ---
@@ -95,6 +95,19 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
   3. Garis poligon **Convex Hull** (hijau tebal).
   4. Titik **Convexity Defects** (lingkaran merah/kuning).
   5. Metrik nilai: *Lock Status, BG Sub Status, Defect Count, Internal Holes, Solidity, Aspect Ratio, dan Status Pose*.
+
+### F. Perbaikan Waktu Game Over & Durasi Proporsional Mole per Whack
+1. **Perbaikan Reset Waktu Saat Game Over**:
+   - Membekukan waktu bertahan (`final_survival_elapsed`) saat Game Over terjadi, sehingga waktu di layar Game Over tidak lagi terus bertambah.
+   - Mengimplementasikan `restart_current_game(current_time)`: Saat pemain menekan tombol `[R]`, sesi di-restart total dengan `start_time` baru (`elapsed = 0.0s`), `time_left` kembali penuh, skor di-reset, dan status mode permainan (Survival vs Level) terisolasi secara mandiri.
+2. **Durasi Kemunculan Mole Lebih Lama & Adaptif Proporsional**:
+   - **Mode Level Progression (Level 1-10)**:
+     - Durasi kemunculan mole dinaikkan (+50%) menjadi $2.70\text{s} - 3.20\text{s}$ di Level 1, menurun secara bertahap dan proporsional hingga $1.25\text{s} - 1.65\text{s}$ di Level 10.
+     - Setiap pukulan sukses (**WHACK!**) memberikan **Bonus Waktu Tambahan** pada countdown timer yang proporsional terhadap level (Level 1: $+1.5\text{s}$, menurun bertahap hingga $+0.6\text{s}$ di Level 10).
+     - Efek visual `HitEffect` menampilkan teks bonus: `WHACK! +100 (+1.5s)`.
+   - **Mode Survival**:
+     - Durasi kemunculan mole dinaikkan menjadi $2.70\text{s} - 3.20\text{s}$ di awal permainan, menurun secara proporsional dan bertahap seiring berjalannya waktu bertahan (hingga $1.30\text{s} - 1.70\text{s}$ pada $t \ge 150\text{ detik}$).
+     - Setiap kombo kelipatan 8 memberikan regenerasi $+1$ HP (nyawa).
 
 ---
 

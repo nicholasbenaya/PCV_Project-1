@@ -96,11 +96,13 @@ class HitEffect:
         spawn_time: float,
         duration: float = 0.45,
         combo: int = 1,
+        time_bonus: float = 0.0,
     ):
         self.position = position
         self.spawn_time = spawn_time
         self.duration = duration
         self.combo = combo
+        self.time_bonus = time_bonus
 
     def is_alive(self, current_time: float) -> bool:
         return (current_time - self.spawn_time) < self.duration
@@ -178,16 +180,14 @@ class SurvivalTracker:
         return min(4, max(1, tier))
 
     def get_mole_speed(self, current_time: float) -> Tuple[float, float]:
-        """Mengembalikan batas waktu kemunculan mole (semakin lama semakin cepat)."""
-        tier = self.get_intensity_tier(current_time)
-        if tier == 1:
-            return (1.60, 1.95)
-        elif tier == 2:
-            return (1.25, 1.55)
-        elif tier == 3:
-            return (0.95, 1.20)
-        else:
-            return (0.60, 0.85)
+        """Mengembalikan batas waktu kemunculan mole (lebih lama dan adaptif proporsional terhadap waktu bertahan)."""
+        elapsed = self.get_elapsed(current_time)
+        # Menurun secara proporsional dan bertahap terhadap durasi bertahan (rentang 0 s.d 150 detik)
+        decay = min(1.0, max(0.0, elapsed / 150.0))
+        # Dari 2.70 - 3.20 detik di awal -> turun bertahap hingga 1.30 - 1.70 detik saat bertahan sangat lama
+        min_lifespan = 2.70 - (1.40 * decay)
+        max_lifespan = 3.20 - (1.50 * decay)
+        return (min_lifespan, max_lifespan)
 
     def get_simultaneous_moles_count(self, current_time: float, total_holes: int) -> int:
         """Mengizinkan 2 mole muncul bersamaan jika grid cukup besar dan intensitas tinggi."""

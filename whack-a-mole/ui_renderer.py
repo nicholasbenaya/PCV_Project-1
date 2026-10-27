@@ -724,11 +724,12 @@ class UIRenderer:
             )
 
             cv2.circle(frame, (ex, ey), expand_r, alpha_color, 3, cv2.LINE_AA)
+            bonus_str = f" (+{effect.time_bonus:.1f}s)" if effect.time_bonus > 0 else ""
             self.draw_text_with_outline(
                 frame,
-                f"WHACK! +{100 * effect.combo}",
-                (ex - 60, ey - expand_r - 8),
-                scale=0.65,
+                f"WHACK! +{100 * effect.combo}{bonus_str}",
+                (ex - 75, ey - expand_r - 8),
+                scale=0.62,
                 color=(0, 255, 120),
                 thickness=2,
             )

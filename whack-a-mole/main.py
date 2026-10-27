@@ -242,14 +242,15 @@ def run_game() -> None:
                         game_engine.state = GameState.MENU
                 elif key in (ord("r"), ord("R")):
                     game_engine.start_level_mode(game_engine.current_level, current_time)
+                elif key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
 
-            # Kontrol saat Game Over
+            # Kontrol saat Game Over (Mulai ulang mode yang sama dengan waktu ter-reset)
             elif game_engine.state == GameState.GAMEOVER:
                 if key in (ord("r"), ord("R")):
-                    if game_engine.survival_tracker is not None:
-                        game_engine.start_survival_mode(current_time)
-                    else:
-                        game_engine.start_level_mode(game_engine.current_level, current_time)
+                    game_engine.restart_current_game(current_time)
+                elif key in (ord("m"), ord("M")):
+                    game_engine.state = GameState.MENU
 
     finally:
         game_engine.audio.stop_bgm()

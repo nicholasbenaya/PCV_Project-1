@@ -113,10 +113,17 @@ Sistem **tidak pernah** langsung memilih kontur terbesar di layar (yang sering k
 - **Mengarahkan Kursor**: Buka telapak tangan (*HIGH_FIVE*). Kursor berwarna hijau dengan label `"MOVE (OPEN)"`.
 - **Aksi Pukul (WHACK!) / Klik Menu**: Kepalkan tangan (*FIST*) tepat di atas lubang mole atau tombol menu. Kursor berubah menjadi merah pekat dengan efek impak dan label `"WHACK! (FIST)"`.
 
-### 4.2. Pilihan Mode & Kustomisasi Grid
+### 4.2. Pilihan Mode, Durasi Proporsional Mole, & Bonus Waktu
 - **Pilihan Grid**: $2 \times 2$ (4 Lubang), $2 \times 3$ (6 Lubang - Default), $3 \times 3$ (9 Lubang), $3 \times 4$ (12 Lubang).
-- **Mode Survival (Endless)**: 3 HP nyawa, intensitas dan tempo musik adaptif naik setiap 18 detik, kecepatan mole hingga 0.55s, mole ganda, dan *combo multiplier* hingga x4.
-- **Mode Level (1 - 10)**: Perkembangan bertingkat dengan syarat membuka level berikutnya setelah menuntaskan level sebelumnya (tersimpan permanen di `save_data.json`).
+- **Mode Survival (Endless)**:
+  - Durasi kemunculan mole dinaikkan menjadi $2.70\text{s} - 3.20\text{s}$ di awal permainan, menurun secara proporsional dan bertahap seiring berjalannya waktu bertahan (hingga $1.30\text{s} - 1.70\text{s}$ pada $t \ge 150\text{s}$).
+  - Regenerasi nyawa ($+1$ HP) setiap kelipatan 8 kombo hit.
+  - Perbaikan pembekuan waktu bertahan saat Game Over dan reset waktu bersih ke $0.0\text{s}$ saat restart via tombol `[R]`.
+- **Mode Level (1 - 10)**:
+  - Durasi kemunculan mole dinaikkan (+50%) menjadi $2.70\text{s} - 3.20\text{s}$ di Level 1, menurun secara bertahap dan proporsional hingga $1.25\text{s} - 1.65\text{s}$ di Level 10.
+  - Setiap pukulan sukses (**WHACK!**) memberikan **Bonus Waktu Tambahan** pada countdown timer yang proporsional terhadap level (Level 1: $+1.5\text{s}$, menurun bertahap hingga $+0.6\text{s}$ di Level 10).
+  - Teks efek visual melayang menampilkan perolehan waktu: `WHACK! +100 (+1.5s)`.
+  - Restart via tombol `[R]` me-reset timer level dan skor secara bersih.
 - **Sintesis Audio Prosedural**: Efek suara sintetis stereo murni gelombang matematika NumPy.
 
 ---

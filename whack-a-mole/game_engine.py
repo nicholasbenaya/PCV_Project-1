@@ -105,6 +105,12 @@ class GameEngine:
         self.current_level: int = 1
         self.level_start_time: float = 0.0
 
+        # Mode tracking untuk reset waktu dan restart akurat
+        self.last_played_mode: str = "SURVIVAL"
+        self.final_survival_elapsed: float = 0.0
+        self.level_time_bonus: float = 0.0
+        self.game_over_time: float = 0.0
+
         # Koleksi tombol interaktif per layar
         self.menu_buttons: List[InteractiveButton] = []
         self.level_buttons: List[InteractiveButton] = []
@@ -270,19 +276,24 @@ class GameEngine:
             self._rebuild_all_buttons()
 
     def start_survival_mode(self, current_time: float) -> None:
-        """Memulai sesi Mode Survival."""
+        """Memulai sesi Mode Survival dengan reset total waktu dan skor."""
+        self.last_played_mode = "SURVIVAL"
         self.state = GameState.PLAYING_SURVIVAL
         self.score_manager.reset_session()
         self.survival_tracker = SurvivalTracker(start_time=current_time)
+        self.final_survival_elapsed = 0.0
+        self.level_time_bonus = 0.0
+        self.game_over_time = 0.0
         self.hit_effects.clear()
         self.last_hit_time = 0.0
 
+        min_speed, max_speed = self.survival_tracker.get_mole_speed(current_time)
         self.moles = [
             Mole(
                 mole_id=1,
                 initial_hole_idx=random.randint(0, len(self.holes) - 1),
                 spawn_time=current_time,
-                lifespan=1.85,
+                lifespan=random.uniform(min_speed, max_speed),
             )
         ]
 
@@ -290,11 +301,15 @@ class GameEngine:
         self.audio.set_bgm_intensity(1)
 
     def start_level_mode(self, level_num: int, current_time: float) -> None:
-        """Memulai sesi Mode Level Progression."""
+        """Memulai sesi Mode Level Progression dengan reset total waktu dan skor."""
+        self.last_played_mode = "LEVEL"
+        self.survival_tracker = None  # Wajib reset ke None agar tidak tertukar statusnya
         self.current_level = level_num
         self.state = GameState.PLAYING_LEVEL
         self.score_manager.reset_session()
         self.level_start_time = current_time
+        self.level_time_bonus = 0.0
+        self.game_over_time = 0.0
         self.hit_effects.clear()
         self.last_hit_time = 0.0
 
@@ -317,6 +332,13 @@ class GameEngine:
 
         self.audio.play_sfx("click")
         self.audio.set_bgm_intensity(cfg.bgm_intensity)
+
+    def restart_current_game(self, current_time: float) -> None:
+        """Memulai ulang mode permainan yang baru saja dimainkan (Survival atau Level) dengan reset waktu total."""
+        if self.last_played_mode == "SURVIVAL":
+            self.start_survival_mode(current_time)
+        else:
+            self.start_level_mode(self.current_level, current_time)
 
     def handle_button_action(self, action_id: str, current_time: float) -> Optional[str]:
         """Mengeksekusi perintah dari tombol UI."""
@@ -417,7 +439,9 @@ class GameEngine:
                     if not is_alive:
                         self.audio.stop_bgm()
                         self.audio.play_sfx("game_over")
+                        self.final_survival_elapsed = self.survival_tracker.get_elapsed(current_time)
                         self.save_manager.record_survival_score(self.score_manager.score)
+                        self.game_over_time = current_time
                         self.state = GameState.GAMEOVER
                         return None
 
@@ -440,12 +464,19 @@ class GameEngine:
                             self.score_manager.record_hit()
                             self.last_hit_time = current_time
 
+                            # Bonus nyawa jika mencapai kelipatan 8 kombo
+                            if self.score_manager.combo > 0 and self.score_manager.combo % 8 == 0:
+                                if self.survival_tracker.lives < self.survival_tracker.max_lives:
+                                    self.survival_tracker.lives += 1
+                                    self.audio.play_sfx("level_clear")
+
                             self.hit_effects.append(
                                 HitEffect(
                                     position=hole.center,
                                     spawn_time=current_time,
                                     duration=HIT_EFFECT_DURATION,
                                     combo=self.score_manager.combo,
+                                    time_bonus=0.0,
                                 )
                             )
 
@@ -463,7 +494,8 @@ class GameEngine:
         elif self.state == GameState.PLAYING_LEVEL:
             cfg = LEVEL_CONFIGS[self.current_level]
             elapsed = current_time - self.level_start_time
-            time_left = cfg.duration_seconds - elapsed
+            total_allowed = cfg.duration_seconds + self.level_time_bonus
+            time_left = max(0.0, total_allowed - elapsed)
 
             if self.score_manager.hits_count >= cfg.target_hits:
                 self.audio.stop_bgm()
@@ -477,6 +509,7 @@ class GameEngine:
             if time_left <= 0:
                 self.audio.stop_bgm()
                 self.audio.play_sfx("game_over")
+                self.game_over_time = current_time
                 self.state = GameState.GAMEOVER
                 return None
 
@@ -503,12 +536,17 @@ class GameEngine:
                             self.score_manager.record_hit()
                             self.last_hit_time = current_time
 
+                            # Tambahan waktu per whack proporsional per level
+                            bonus_time = cfg.time_bonus_per_whack
+                            self.level_time_bonus += bonus_time
+
                             self.hit_effects.append(
                                 HitEffect(
                                     position=hole.center,
                                     spawn_time=current_time,
                                     duration=HIT_EFFECT_DURATION,
                                     combo=self.score_manager.combo,
+                                    time_bonus=bonus_time,
                                 )
                             )
 
@@ -604,7 +642,8 @@ class GameEngine:
         elif self.state == GameState.PLAYING_LEVEL:
             cfg = LEVEL_CONFIGS[self.current_level]
             elapsed = current_time - self.level_start_time
-            time_left = max(0.0, cfg.duration_seconds - elapsed)
+            total_time = cfg.duration_seconds + self.level_time_bonus
+            time_left = max(0.0, total_time - elapsed)
             best = self.save_manager.level_high_scores.get(str(self.current_level), 0)
 
             self.renderer.draw_holes_and_moles(
@@ -647,20 +686,21 @@ class GameEngine:
         elif self.state == GameState.GAMEOVER:
             self.renderer.draw_holes_and_moles(frame, self.holes, [], [], current_time)
 
-            if self.survival_tracker is not None:
-                elapsed = self.survival_tracker.get_elapsed(current_time)
+            if self.last_played_mode == "SURVIVAL":
                 lines = [
-                    f"Skor Akhir Survival: {self.score_manager.score}",
-                    f"Waktu Bertahan: {elapsed:.1f} detik",
+                    f"Mode: Survival Endless",
+                    f"Skor Akhir: {self.score_manager.score}",
+                    f"Waktu Bertahan: {self.final_survival_elapsed:.1f} detik",
                     f"Kombo Tertinggi: x{self.score_manager.max_combo}",
                     f"Rekor Tertinggi: {self.save_manager.survival_high_score}",
                 ]
             else:
                 cfg = LEVEL_CONFIGS[self.current_level]
                 lines = [
-                    f"Gagal Menuntaskan Level {self.current_level}: {cfg.title}",
-                    f"Pukulan Mole: {self.score_manager.hits_count} / {cfg.target_hits}",
+                    f"Mode: Level {self.current_level} ({cfg.title})",
                     f"Waktu Bermain Habis!",
+                    f"Pukulan Mole: {self.score_manager.hits_count} / {cfg.target_hits}",
+                    f"Skor Akhir: {self.score_manager.score}",
                 ]
 
             self.renderer.draw_modal_dialog(
@@ -668,7 +708,7 @@ class GameEngine:
                 "GAME OVER",
                 (0, 0, 240),
                 lines,
-                "Tekan [R] untuk Coba Lagi",
+                "Tekan [R] untuk Mulai Ulang (Reset Waktu)",
                 secondary_prompt="[ESC] Kembali ke Menu Utama",
             )
 

@@ -130,20 +130,21 @@ class LevelConfig:
     mole_max_lifespan: float
     simultaneous_moles: int
     bgm_intensity: int  # 1 (Santai) sampai 4 (Ekstrem)
+    time_bonus_per_whack: float = 1.0  # Tambahan waktu countdown per pukulan sukses
 
 
-# Definisi 10 level bertingkat
+# Definisi 10 level bertingkat dengan durasi kemunculan mole lebih lama dan bonus waktu proporsional
 LEVEL_CONFIGS: Dict[int, LevelConfig] = {
-    1: LevelConfig(1, "Pemanasan", 8, 30.0, 1.70, 2.00, 1, 1),
-    2: LevelConfig(2, "Refleks Cepat", 10, 30.0, 1.50, 1.80, 1, 1),
-    3: LevelConfig(3, "Lubang Lincah", 12, 30.0, 1.35, 1.60, 1, 2),
-    4: LevelConfig(4, "Fokus Ganda", 14, 28.0, 1.20, 1.45, 1, 2),
-    5: LevelConfig(5, "Irama Cepat", 16, 28.0, 1.10, 1.30, 1, 2),
-    6: LevelConfig(6, "Ujian Akurasi", 18, 26.0, 1.00, 1.20, 1, 3),
-    7: LevelConfig(7, "Serbuan Mole", 20, 25.0, 0.90, 1.10, 1, 3),
-    8: LevelConfig(8, "Badai Refleks", 22, 25.0, 0.80, 1.00, 2, 3),
-    9: LevelConfig(9, "Zona Ekstrem", 25, 25.0, 0.70, 0.90, 2, 4),
-    10: LevelConfig(10, "Grandmaster", 30, 25.0, 0.55, 0.75, 2, 4),
+    1: LevelConfig(1, "Pemanasan", 8, 35.0, 2.70, 3.20, 1, 1, 1.5),
+    2: LevelConfig(2, "Refleks Cepat", 10, 35.0, 2.50, 2.95, 1, 1, 1.4),
+    3: LevelConfig(3, "Lubang Lincah", 12, 35.0, 2.30, 2.75, 1, 2, 1.3),
+    4: LevelConfig(4, "Fokus Ganda", 14, 32.0, 2.15, 2.55, 1, 2, 1.2),
+    5: LevelConfig(5, "Irama Cepat", 16, 32.0, 2.00, 2.40, 1, 2, 1.1),
+    6: LevelConfig(6, "Ujian Akurasi", 18, 30.0, 1.85, 2.25, 1, 3, 1.0),
+    7: LevelConfig(7, "Serbuan Mole", 20, 30.0, 1.70, 2.10, 1, 3, 0.9),
+    8: LevelConfig(8, "Badai Refleks", 22, 28.0, 1.55, 1.95, 2, 3, 0.8),
+    9: LevelConfig(9, "Zona Ekstrem", 25, 28.0, 1.40, 1.80, 2, 4, 0.7),
+    10: LevelConfig(10, "Grandmaster", 30, 28.0, 1.25, 1.65, 2, 4, 0.6),
 }
 
 # Warna BGR untuk rendering UI
