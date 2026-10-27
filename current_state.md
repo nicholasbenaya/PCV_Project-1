@@ -1,6 +1,6 @@
 # Status Terkini Proyek: PCV Project 1 (Praktikum Pengolahan Citra & Visi Komputer)
 
-**Terakhir Diperbarui**: 27 Oktober 2026, 05:45 WIB  
+**Terakhir Diperbarui**: 27 Oktober 2026, 07:10 WIB  
 **Repositori**: [`https://github.com/nicholasbenaya/PCV_Project-1`](https://github.com/nicholasbenaya/PCV_Project-1)  
 **Cabang Aktif**: `main`  
 **Lingkungan**: Python 3.12, OpenCV 5.0 / 4.x, NumPy, Pygame (Audio Sintetis)  
@@ -45,14 +45,20 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 - Kontur dicari dengan mode `cv2.RETR_CCOMP` pada masker sebelum morphological closing besar.
 - Menghitung jumlah child contour internal dengan luas $\ge 25\text{ px}$. Karena wajah memiliki mata, alis, dan mulut yang menghasilkan $\ge 3$ lubang internal, kontur dengan $\ge 3$ lubang dan defek celah jari $< 2$ **otomatis ditolak sebagai wajah**.
 
-### C. Pilar 3: Open-Palm Lock-On & Sticky Object Tracking
+### C. Pilar 3: Open-Palm Lock-On, Area Confidence, & Sticky Object Tracking
+- **Filter Dimensi Minimal (`min-width`, `min-height`, `min-area`)**:
+  - Ambang batas kontur tangan ditingkatkan menjadi $A \ge 2500\text{ px}$, lebar bounding box $w \ge 55\text{ px}$, dan tinggi $h \ge 55\text{ px}$.
+  - Secara efektif mengeliminasi serpihan bising kecil, garis rambut tipis, atau bayangan tepi meja agar kursor tidak terlempar.
 - **State Belum Terkunci (`is_hand_locked == False`)**:
+  - Sistem mengurutkan kandidat kontur berdasarkan luas terbesar (`area` descending).
   - Sistem mencari kontur telapak tangan terbuka (*HIGH_FIVE*) dengan syarat:
     $$\text{Valid Defects} \ge 1 \quad (\text{minimal 1 titik merah sela jari}) \quad \lor \quad \text{Solidity} < 0.80$$
-  - Begitu ditemukan, sistem mengaktifkan lock-on dan mengunci objek tersebut.
-- **State Terkunci (`is_hand_locked == True`) - Sticky Locking**:
-  - Sistem mengunci ketat hanya pada objek tangan tersebut dalam radius $\le 180\text{ px}$.
-  - Tidak akan pernah melompat ke objek lain (rambut, wajah, latar belakang). Kontur tanpa pose diberi penalti jarak (+80 px).
+  - Begitu ditemukan, sistem mengaktifkan lock-on, mencatat luas awal $A_0 = \text{area}$, dan mengunci objek tersebut.
+- **State Terkunci (`is_hand_locked == True`) - Area Confidence & Sticky Locking**:
+  - Sistem mengunci ketat hanya pada objek tangan tersebut dalam radius $\le 180\text{ px}$ menggunakan scoring **Area Confidence & Consistency**:
+    $$\text{Total Cost} = d + \left|1.0 - \min\left(2.5, \frac{A}{A_{\text{last}}}\right)\right| \cdot 60.0 + \text{Penalti Serpihan} - \left(\frac{A}{A_{\text{max}}}\right) \cdot 40.0 + \text{Penalti Pose}$$
+  - Serpihan kecil ($A < 0.5 \times A_{\text{last}}$) diganjar penalti jarak $+90\text{ px}$, sehingga kontur tangan utama selalu mengalahkan serpihan bising yang kebetulan berjarak dekat.
+  - Luas tangan diperbarui secara adaptif menggunakan EMA: $A_{\text{last}} = 0.85 \times A_{\text{last}} + 0.15 \times A_{\text{current}}$.
   - Jika tangan tertutup sejenak (occlusion 1-2 frame), sistem menahan kursor pada koordinat terakhir tangan dan tidak melompat.
   - Kunci hanya dilepas jika tangan benar-benar ditarik keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik).
 

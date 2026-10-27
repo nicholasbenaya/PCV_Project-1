@@ -39,6 +39,8 @@ try:
         LOWER_SKIN_YCRCB,
         MAX_HAND_CONTOUR_AREA,
         MIN_HAND_CONTOUR_AREA,
+        MIN_HAND_HEIGHT,
+        MIN_HAND_WIDTH,
         MORPH_KERNEL_SIZE,
         POSE_FIST,
         POSE_HIGH_FIVE,
@@ -77,6 +79,8 @@ except ImportError:
         LOWER_SKIN_YCRCB,
         MAX_HAND_CONTOUR_AREA,
         MIN_HAND_CONTOUR_AREA,
+        MIN_HAND_HEIGHT,
+        MIN_HAND_WIDTH,
         MORPH_KERNEL_SIZE,
         POSE_FIST,
         POSE_HIGH_FIVE,
@@ -143,6 +147,7 @@ class HandTracker:
         # 2. State Open-Palm Lock-On & Nearest-Neighbor Tracking
         self.is_hand_locked: bool = False
         self.last_hand_centroid: Optional[Tuple[int, int]] = None
+        self.last_hand_area: float = 0.0
         self.lock_lost_frames: int = 0
 
         # Preset mode segmentasi aktif (Skin / Glove / Object)
@@ -198,6 +203,7 @@ class HandTracker:
         """Mereset status lock-on tangan agar mencari gestur HIGH_FIVE baru."""
         self.is_hand_locked = False
         self.last_hand_centroid = None
+        self.last_hand_area = 0.0
         self.lock_lost_frames = 0
         self.prev_centroid = None
         self.pose_history.clear()
@@ -433,6 +439,10 @@ class HandTracker:
                 if area < self.min_area or area > self.max_area:
                     continue
 
+                x, y, w, h = cv2.boundingRect(cnt)
+                if w < MIN_HAND_WIDTH or h < MIN_HAND_HEIGHT:
+                    continue
+
                 moments = cv2.moments(cnt)
                 if moments["m00"] == 0:
                     continue
@@ -481,6 +491,8 @@ class HandTracker:
 
         if not self.is_hand_locked:
             # Belum terkunci: HANYA BOLEH mengunci kontur yang memenuhi syarat HIGH_FIVE (minimal 1 titik merah sela jari)
+            # Prioritaskan kontur yang lebih besar (tangan pemain, bukan serpihan kecil)
+            candidate_data.sort(key=lambda c: c[2], reverse=True)
             for cand in candidate_data:
                 cnt, (cx, cy), area, holes, defects, solidity, ar, defect_pts, hull, raw_pose = cand
 
@@ -488,6 +500,7 @@ class HandTracker:
                 if defects >= HIGH_FIVE_MIN_DEFECTS or solidity < HIGH_FIVE_MAX_SOLIDITY:
                     self.is_hand_locked = True
                     self.last_hand_centroid = (cx, cy)
+                    self.last_hand_area = area
                     self.lock_lost_frames = 0
                     self.pose_history.clear()
                     self.pose_history.append(raw_pose)
@@ -527,21 +540,38 @@ class HandTracker:
             if self.last_hand_centroid is not None:
                 lx, ly = self.last_hand_centroid
                 in_range_cands = []
+                max_cand_area = max([c[2] for c in candidate_data], default=self.last_hand_area)
 
                 for cand in candidate_data:
                     cx, cy = cand[1]
+                    cand_area = cand[2]
                     dist = math.hypot(cx - lx, cy - ly)
                     if dist <= LOCKON_MAX_DISTANCE:
-                        # Prioritaskan kontur yang paling dekat dari posisi terakhir tangan
-                        # Berikan penalti jarak pada kontur amorf agar objek lain tidak pernah merebut kursor
+                        # Area Confidence & Consistency Scoring:
+                        # 1. Penalti deviasi rasio luas terhadap luas tangan sebelumnya (A_cand / A_last)
+                        area_ratio = cand_area / max(1.0, self.last_hand_area)
+                        area_penalty = abs(1.0 - min(2.5, area_ratio)) * 60.0
+
+                        # 2. Penalti keras untuk serpihan kecil (< 50% luas tangan) agar kursor tidak terlempar
+                        if cand_area < 0.5 * self.last_hand_area:
+                            area_penalty += 90.0
+
+                        # 3. Bonus dominansi luas terhadap kandidat terbesar saat ini
+                        area_dominance = (cand_area / max(1.0, max_cand_area)) * 40.0
+
+                        # 4. Penalti jika bukan pose tangan yang valid (HIGH_FIVE atau FIST)
                         raw_pose = cand[9]
                         pose_penalty = 0.0 if raw_pose in (POSE_HIGH_FIVE, POSE_FIST) else 80.0
-                        in_range_cands.append((dist + pose_penalty, cand))
+
+                        total_cost = dist + area_penalty - area_dominance + pose_penalty
+                        in_range_cands.append((total_cost, cand))
 
                 if in_range_cands:
                     in_range_cands.sort(key=lambda x: x[0])
                     chosen_candidate = in_range_cands[0][1]
                     self.last_hand_centroid = chosen_candidate[1]
+                    # Update luas tangan dengan EMA agar adaptif terhadap rotasi/perspektif wajar
+                    self.last_hand_area = 0.85 * self.last_hand_area + 0.15 * chosen_candidate[2]
                     self.lock_lost_frames = 0
                 else:
                     self.lock_lost_frames += 1
@@ -549,6 +579,7 @@ class HandTracker:
                         # Tangan benar-benar keluar dari layar (> 0.8 detik) -> baru lepas kunci
                         self.is_hand_locked = False
                         self.last_hand_centroid = None
+                        self.last_hand_area = 0.0
                         self.lock_lost_frames = 0
 
             # Jika sementara hilang dalam 1-2 frame, tahan kursor pada koordinat terakhir tangan agar tidak melompat ke objek lain

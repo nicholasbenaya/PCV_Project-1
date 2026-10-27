@@ -45,7 +45,9 @@ LOCKON_MAX_DISTANCE = 180.0  # Radius maksimal pelacakan nearest-neighbor (pikse
 LOCKON_LOST_TIMEOUT_FRAMES = 24  # Toleransi frame hilang sebelum melepaskan lock-on (~0.8 detik)
 
 # Parameter pembersihan kontur dan pelacakan
-MIN_HAND_CONTOUR_AREA = 1800  # Luas piksel minimal kontur tangan
+MIN_HAND_CONTOUR_AREA = 2500  # Luas piksel minimal kontur tangan (menolak noise/serpihan kecil)
+MIN_HAND_WIDTH = 55  # Lebar minimal bounding box tangan (piksel)
+MIN_HAND_HEIGHT = 55  # Tinggi minimal bounding box tangan (piksel)
 MAX_HAND_CONTOUR_AREA = 140000  # Batas atas untuk mengeliminasi background masif
 CENTROID_SMOOTHING_FACTOR = 0.65  # Bobot EMA untuk stabilisasi kursor
 MORPH_KERNEL_SIZE = (5, 5)

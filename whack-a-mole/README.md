@@ -77,18 +77,25 @@ Tanpa menggunakan Haar Cascade atau model deep learning apa pun, sistem membedak
 - Wajah manusia secara alami memiliki komponen gelap (mata kiri, mata kanan, alis, dan mulut) yang menghasilkan $\ge 3$ lubang internal (*holes* dengan area $\ge 25\text{ px}$).
 - **Aturan Eliminasi Wajah**: Kontur dengan $\text{Internal Holes} \ge 3$ dan $\text{Defek Celah Jari} < 2$ **otomatis ditolak**.
 
-### 3.3. Pilar 3: Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Tracking
+### 3.3. Pilar 3: Mekanisme "Open-Palm Lock-On", Area Confidence, & Nearest-Neighbor Tracking
 Sistem **tidak pernah** langsung memilih kontur terbesar di layar (yang sering kali merupakan badan/baju):
-1. **Fase Pencarian (`is_hand_locked == False`)**:
+1. **Filter Dimensi Minimal (`min-width`, `min-height`, `min-area`)**:
+   - Kontur kandidat harus memenuhi $A \ge 2500\text{ px}$, lebar bounding box $w \ge 55\text{ px}$, dan tinggi $h \ge 55\text{ px}$.
+   - Mencegah kursor terlempar ke garis rambut tipis, serpihan noise kecil, atau bayangan meja.
+2. **Fase Pencarian (`is_hand_locked == False`)**:
+   - Sistem mengurutkan kandidat kontur berdasarkan luas terbesar (`area` descending).
    - Sistem hanya akan mengunci kontur yang memenuhi kriteria telapak tangan terbuka (*HIGH_FIVE*):
-     $$\text{Valid Defects} \ge 3 \quad (\theta < 85^{\circ}) \quad \land \quad \text{Solidity} \le 0.82$$
+     $$\text{Valid Defects} \ge 1 \quad (\theta < 85^{\circ}) \quad \lor \quad \text{Solidity} < 0.80$$
    - Wajah, leher, atau benda bulat tidak akan pernah lolos uji ini.
-   - Begitu ditemukan, sistem mengaktifkan `is_hand_locked = True` dan menyimpan koordinat centroid $\mathbf{C}_0 = (cX, cY)$.
-2. **Fase Pelacakan (`is_hand_locked == True`)**:
-   - Pada frame-frame berikutnya, sistem memilih kontur kandidat yang memiliki jarak Euclidean terpendek dari posisi terakhir:
-     $$d = \sqrt{(cX - cX_{\text{last}})^2 + (cY - cY_{\text{last}})^2} \le 160\text{ px}$$
-   - Ketika tangan berubah dari telapak terbuka menjadi kepalan tangan (*FIST*), posisinya berada tepat di koordinat yang sama ($d < 60\text{ px}$), sehingga kepalan tangan tetap terkunci tanpa melompat ke kepala atau objek lain.
-   - Jika tangan keluar dari layar selama $> 16\text{ frame}$ (~0.5 detik), kunci dilepas otomatis dan sistem kembali ke fase pencarian.
+   - Begitu ditemukan, sistem mengaktifkan `is_hand_locked = True`, mencatat $A_0 = \text{area}$, dan menyimpan koordinat centroid $\mathbf{C}_0 = (cX, cY)$.
+3. **Fase Pelacakan & Area Confidence Scoring (`is_hand_locked == True`)**:
+   - Pada frame-frame berikutnya, sistem mengevaluasi semua kontur dalam radius $d \le 180\text{ px}$ menggunakan fungsi biaya **Area Confidence & Consistency**:
+     $$\text{Total Cost} = d + \left|1.0 - \min\left(2.5, \frac{A}{A_{\text{last}}}\right)\right| \cdot 60.0 + \text{Penalti Serpihan} - \left(\frac{A}{A_{\text{max}}}\right) \cdot 40.0 + \text{Penalti Pose}$$
+     * Penalti serpihan: $+90.0$ jika luas kontur $< 0.5 \times A_{\text{last}}$, mencegah pembajakan kursor oleh serpihan kecil di dekat tangan.
+     * Bonus dominansi luas: $-40.0 \times (A / A_{\text{max}})$ untuk memprioritaskan kontur tangan utama.
+     * Penalti pose: $+80.0$ jika bukan gestur tangan yang valid (*HIGH_FIVE* atau *FIST*).
+   - Ketika tangan berubah dari telapak terbuka menjadi kepalan tangan (*FIST*), posisinya berada tepat di koordinat yang sama dan konsistensi luas terjaga, sehingga kursor tetap terkunci stabil tanpa melompat ke kepala, rambut, atau serpihan kecil.
+   - Jika tangan keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik), kunci dilepas otomatis dan sistem kembali ke fase pencarian.
 
 ### 3.4. Pilar 4: Ekstraksi Fitur Bentuk, Klasifikasi Pose, & Cursor Freeze
 - **Klasifikasi 2 Pose**:
