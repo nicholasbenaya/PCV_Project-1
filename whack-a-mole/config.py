@@ -1,13 +1,41 @@
 """Konfigurasi parameter visual, segmentasi citra, gameplay, level, dan audio (Full Screen HD 1280x720)."""
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import numpy as np
 
-# Pengaturan kanvas dan kamera (Full Screen HD Widescreen tanpa partisi Safe Area)
+# Pengaturan kanvas dan kamera (HD Widescreen 1280x720)
 DEFAULT_FRAME_WIDTH = 1280
 DEFAULT_FRAME_HEIGHT = 720
-WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual (Pure OpenCV HD 1280x720)"
+WINDOW_TITLE = "Tugas Game - Whack-A-Mole Virtual (Dual-Section Safe Area & Classical PCD)"
+
+# Preset Dual-Section (Playing Section vs Non-Playing Safe Zone)
+ZONE_PRESETS: List[Dict[str, Any]] = [
+    {
+        "name": "TANGAN KANAN (Kiri: Wajah Diblokir)",
+        "play_rect": (420, 0, 1280, 720),
+        "safe_rect": (0, 0, 420, 720),
+        "split_line": ((420, 0), (420, 720)),
+    },
+    {
+        "name": "TANGAN KIRI (Kanan: Wajah Diblokir)",
+        "play_rect": (0, 0, 860, 720),
+        "safe_rect": (860, 0, 1280, 720),
+        "split_line": ((860, 0), (860, 720)),
+    },
+    {
+        "name": "TANGAN BAWAH (Atas: Wajah Diblokir)",
+        "play_rect": (0, 240, 1280, 720),
+        "safe_rect": (0, 0, 1280, 240),
+        "split_line": ((0, 240), (1280, 240)),
+    },
+    {
+        "name": "LAYAR PENUH (Tanpa Safe Zone)",
+        "play_rect": (0, 0, 1280, 720),
+        "safe_rect": (0, 0, 0, 0),
+        "split_line": ((0, 0), (0, 0)),
+    },
+]
 
 # Rentang segmentasi warna kulit default pada HSV (H: 0..179 di OpenCV)
 LOWER_SKIN_1 = np.array([0, 30, 50], dtype=np.uint8)

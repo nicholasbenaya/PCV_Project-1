@@ -104,8 +104,10 @@ def run_game() -> None:
             current_time = time.time()
 
             # 4 Pilar PCD Klasik: BG Subtraction, RETR_CCOMP Face Rejection, Open-Palm Lock-On, dan Nearest-Neighbor
-            # Selalu diproses pada frame kamera mentah (murni tanpa coretan UI/tombol)
-            hand_result = hand_tracker.process_frame(frame)
+            # Diproses pada frame kamera mentah di dalam Playing Section (Safe Area aktif)
+            hand_result = hand_tracker.process_frame(
+                frame, play_rect=game_engine.active_zone["play_rect"]
+            )
 
             # Update alur game, interaksi tombol (FIST click), dan logika tabrakan (FIST whack)
             action_status = game_engine.update(hand_result, current_time)
@@ -143,6 +145,11 @@ def run_game() -> None:
                     game_engine.audio.stop_bgm()
                 elif game_engine.state == GameState.MENU:
                     break
+
+            # Ganti Orientasi Safe Zone (Kanan -> Kiri -> Bawah -> Layar Penuh) dengan tombol 'H' atau 'TAB'
+            elif key in (ord("h"), ord("H"), 9):  # 9 is TAB
+                new_zone_name = game_engine.switch_zone()
+                game_engine.audio.play_sfx("click")
 
             # Rekam Frame Referensi Latar Belakang (Background Subtraction) dengan tombol 'B'
             elif key in (ord("b"), ord("B")):

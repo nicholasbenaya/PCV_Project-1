@@ -1,8 +1,8 @@
 # Status Terkini Proyek: PCV Project 1 (Praktikum Pengolahan Citra & Visi Komputer)
 
-**Terakhir Diperbarui**: 27 Oktober 2026, 07:10 WIB  
+**Terakhir Diperbarui**: 27 Oktober 2026, 07:22 WIB  
 **Repositori**: [`https://github.com/nicholasbenaya/PCV_Project-1`](https://github.com/nicholasbenaya/PCV_Project-1)  
-**Cabang Aktif**: `main`  
+**Cabang Aktif**: `safe-area` (Branch Baru Khusus Partisi Safe Area)  
 **Lingkungan**: Python 3.12, OpenCV 5.0 / 4.x, NumPy, Pygame (Audio Sintetis)  
 
 ---
@@ -17,20 +17,41 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 2. **Tipe 2: Shinobi Jutsu Battle Mini-Game (`custom-minigame/`)**  
    - Game pertarungan sihir 2D murni OpenCV melawan *Demon Boss Susanoo*.
    - Klasifikasi 5 segel tangan (*Tiger, Snake, Cross, Ram, Open Palm*) berbasis *convexity defects*, rasio puncak 15%, dan *solidity*.
-3. **Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`) [UPGRADED 4 PILAR PCD KLASIK]**  
-   - Game arcade memukul mole di atas canvas layar penuh HD ($1280 \times 720$) tanpa batasan Safe Area / partisi statis.
-   - Mengintegrasikan **4 Pilar PCD Klasik**:
-     1. **Background Subtraction Berbasis Referensi (Tombol `[B]`)** via `cv2.absdiff()`.
-     2. **Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)** berbasis lubang internal mata/mulut.
-     3. **Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Spatial Tracking** (mencegah pembajakan kursor oleh kepala atau objek lain).
-     4. **Sistem Klasifikasi 2 Hand Pose (HIGH_FIVE move vs FIST whack)** dengan **Cursor Position Freeze Damping**.
+3. **Tipe 3: Whack-A-Mole Virtual Mini-Game (`whack-a-mole/`) [DUAL-SECTION SAFE AREA RESTORED]**  
+   - Game arcade memukul mole di atas canvas HD ($1280 \times 720$) dengan partisi **Dual-Section Safe Area** yang memblokir 100% wajah, tubuh, dan rambut pemain.
+   - Mengintegrasikan **4 Pilar PCD Klasik & Safe Area**:
+     1. **Partisi Dual-Section Safe Area (Tombol `[H]` / `[TAB]`)**: Menolkan seluruh masker biner di luar Playing Section.
+     2. **Background Subtraction Berbasis Referensi (Tombol `[B]`)** via `cv2.absdiff()`.
+     3. **Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)** berbasis lubang internal mata/mulut.
+     4. **Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Spatial Tracking** dengan Area Confidence Scoring & Filter Dimensi Minimal ($55\text{ px}$).
+     5. **Sistem Klasifikasi 2 Hand Pose (HIGH_FIVE move vs FIST whack)** dengan **Cursor Position Freeze Damping**.
    - Dilengkapi jendela **PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)**, **Progression Level 1-10**, **Survival Mode**, dan **Audio Sintetis Adaptif**.
 
 ---
 
-## 2. Rincian Teknis Whack-A-Mole (Tipe 3) Pasca Upgrade 4 Pilar PCD
+## 2. Rincian Teknis Whack-A-Mole (Tipe 3) pada Branch `safe-area`
 
-### A. Pilar 1: Background Subtraction Multi-Channel & Invalidation (Tombol `[B]` & `[N]`)
+### A. Fitur Utama: Partisi Dual-Section Safe Area (Tombol `[H]` / `[TAB]`)
+- **Tujuan**: Mengeliminasi 100% gangguan wajah, kepala, rambut, bahu, dan bayangan tubuh pemain tanpa mengandalkan posisi duduk yang kaku.
+- **Mekanisme Masking Fisik**:
+  Pada [`hand_tracker.py`](file:///c:/Users/kegz/Desktop/Folder%20iko/Projects%20Local/PCV/project-1/whack-a-mole/hand_tracker.py), jika `play_rect` aktif:
+  ```python
+  isolated_mask = np.zeros_like(raw_mask)
+  isolated_mask[py1:py2, px1:px2] = raw_mask[py1:py2, px1:px2]
+  raw_mask = isolated_mask
+  ```
+  Seluruh piksel di luar Playing Section bernilai 0 (hitam total), sehingga tidak ada kontur wajah/rambut yang dapat terdeteksi oleh OpenCV.
+- **4 Pilihan Preset Zona (Siklus via Hotkey `[H]` atau `[TAB]`)**:
+  1. **`TANGAN KANAN (Kiri: Wajah Diblokir)`** (Default): `play_rect = (420, 0, 1280, 720)`, `safe_rect = (0, 0, 420, 720)`. Sisi kiri tempat pemain duduk diblokir total; tangan kanan bebas bermain di sisi kanan.
+  2. **`TANGAN KIRI (Kanan: Wajah Diblokir)`**: `play_rect = (0, 0, 860, 720)`, `safe_rect = (860, 0, 1280, 720)`.
+  3. **`TANGAN BAWAH (Atas: Wajah Diblokir)`**: `play_rect = (0, 240, 1280, 720)`, `safe_rect = (0, 0, 1280, 240)`.
+  4. **`LAYAR PENUH (Tanpa Safe Zone)`**: `play_rect = (0, 0, 1280, 720)` untuk demonstrasi deteksi layar penuh murni.
+- **Visualisasi Safe Area**:
+  - Area Non-Playing Safe Zone diredupkan ($40\%$ kecerahan).
+  - Garis pemisah neon cyan tebal dengan label: `"NON-PLAYING SECTION [SAFE ZONE] Wajah, Rambut & Tubuh Terblokir 100%"`.
+  - Grid lubang, tombol interaktif, HUD, dan kotak dialog modal secara otomatis menyesuaikan tata letak di dalam `play_rect`.
+
+### B. Pilar 1: Background Subtraction Multi-Channel & Invalidation (Tombol `[B]` & `[N]`)
 - Pemain merekam frame referensi latar belakang saat duduk di depan webcam dengan menekan tombol `[B]`.
 - Menggunakan selisih multi-channel BGR + Chroma YCrCb (kebal metamerisme grayscale) dengan threshold adaptif $T_{\text{bg}} = 18$.
 - Menerapkan **Static Background Artifact Invalidation**: Hanya area yang *sudah ada dan sewarna kulit di background* (wajah/meja kayu yang diam) yang dieliminasi, sehingga tangan yang diangkat di depan dinding/baju tidak akan pernah ikut tersubtrak/hilang.
@@ -101,7 +122,9 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 ### Kontrol Keyboard Lengkap:
 | Tombol | Fungsi |
 | :--- | :--- |
+| **`H` / `TAB`** | **Ganti Orientasi Safe Zone** (`Tangan Kanan` $\to$ `Tangan Kiri` $\to$ `Tangan Bawah` $\to$ `Layar Penuh`) |
 | **`B`** | **Merekam Frame Referensi Latar Belakang** (*Background Subtraction*) |
+| **`N`** | **Reset / Bypass Referensi Latar Belakang** |
 | **`V` / `P`** | Toggle jendela **PiP Diagnostik Fitur Bentuk PCV** (Hull, Defek, Solidity, Pose) |
 | **`M`** | Berganti Preset Segmentasi (`Skin` $\to$ `Black Glove` $\to$ `High-Contrast Object`) |
 | **`C`** | Masuk Mode Kalibrasi Cepat / Ambil sampel warna kulit |

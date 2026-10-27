@@ -157,6 +157,55 @@ class UIRenderer:
                 thickness=1,
             )
 
+    def draw_sections_overlay(self, frame: np.ndarray, zone_cfg: Dict) -> None:
+        """Merender batas visual Playing Section dan Non-Playing Section (Safe Zone)."""
+        sx1, sy1, sx2, sy2 = zone_cfg["safe_rect"]
+        px1, py1, px2, py2 = zone_cfg["play_rect"]
+
+        # Redupkan Non-Playing Safe Zone jika aktif (tempat wajah/tubuh berada)
+        if sx2 > sx1 and sy2 > sy1:
+            safe_region = frame[sy1:sy2, sx1:sx2]
+            dimmed_safe = (safe_region * 0.38).astype(np.uint8)
+            frame[sy1:sy2, sx1:sx2] = dimmed_safe
+
+            # Garis pembatas neon
+            p_start, p_end = zone_cfg["split_line"]
+            cv2.line(frame, p_start, p_end, COLOR_PRIMARY_CYAN, 3, cv2.LINE_AA)
+
+            # Label pada Non-Playing Section
+            self.draw_text_with_outline(
+                frame,
+                "NON-PLAYING SECTION",
+                (sx1 + 20, 42),
+                scale=0.60,
+                color=(180, 190, 210),
+                thickness=2,
+            )
+            self.draw_text_with_outline(
+                frame,
+                "[SAFE ZONE] Wajah, Rambut & Tubuh Terblokir 100%",
+                (sx1 + 20, 70),
+                scale=0.44,
+                color=(0, 255, 120),
+                thickness=1,
+            )
+            self.draw_text_with_outline(
+                frame,
+                f"Zona: {zone_cfg['name']}",
+                (sx1 + 20, 96),
+                scale=0.40,
+                color=(0, 220, 255),
+                thickness=1,
+            )
+            self.draw_text_with_outline(
+                frame,
+                "Ganti Sisi: Tekan [H] / [TAB]",
+                (sx1 + 20, 120),
+                scale=0.40,
+                color=(200, 200, 200),
+                thickness=1,
+            )
+
     def draw_main_menu(
         self,
         frame: np.ndarray,
@@ -171,58 +220,64 @@ class UIRenderer:
         is_locked: bool,
         bg_captured: bool,
         current_time: float,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
     ) -> None:
-        """Merender tampilan Menu Utama lengkap pada seluruh layar."""
-        w = frame.shape[1]
+        """Merender tampilan Menu Utama lengkap di dalam Playing Section."""
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            cx = px1 + (px2 - px1) // 2
+        else:
+            w = frame.shape[1]
+            cx = w // 2
 
-        # Judul di Tengah Layar
+        # Judul di Tengah Playing Section
         title = "WHACK-A-MOLE VIRTUAL (PURE OPENCV)"
-        t_w = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 1.1, 3)[0][0]
+        t_w = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 3)[0][0]
         self.draw_text_with_outline(
             frame,
             title,
-            ((w - t_w) // 2, 65),
-            scale=1.1,
+            (cx - t_w // 2, 65),
+            scale=1.0,
             color=COLOR_PRIMARY_CYAN,
             thickness=3,
         )
 
-        subtitle = "Open-Palm Lock-On  |  Nearest-Neighbor Tracking  |  Full Screen Arena"
-        s_w = cv2.getTextSize(subtitle, cv2.FONT_HERSHEY_SIMPLEX, 0.50, 1)[0][0]
+        subtitle = "Dual-Section Safe Area  |  Open-Palm Lock-On  |  2-Pose PCV Control"
+        s_w = cv2.getTextSize(subtitle, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)[0][0]
         self.draw_text_with_outline(
             frame,
             subtitle,
-            ((w - s_w) // 2, 94),
-            scale=0.50,
+            (cx - s_w // 2, 94),
+            scale=0.48,
             color=(0, 255, 120),
             thickness=1,
         )
 
         # Baris Indikator Sistem
         audio_str = "ON" if audio_enabled else "OFF"
-        bg_str = "AKTIF ([B] / [N] Reset)" if bg_captured else "BYPASS / OFF ([B] Rekam)"
+        bg_str = "AKTIF ([B]/[N])" if bg_captured else "BYPASS ([B])"
         bg_col = (0, 255, 120) if bg_captured else (255, 180, 80)
-        lock_str = "TERKUNCI" if is_locked else "MENUNGGU TELAPAK (OPEN)"
+        lock_str = "TERKUNCI" if is_locked else "CARI TELAPAK (OPEN)"
         lock_col = (0, 255, 120) if is_locked else (0, 220, 255)
 
         info_line_1 = f"Grid: {grid_desc}  |  Audio: {audio_str}  |  BG Sub: {bg_str}  |  Mode: {preset_name}"
-        i1_w = cv2.getTextSize(info_line_1, cv2.FONT_HERSHEY_SIMPLEX, 0.44, 1)[0][0]
+        i1_w = cv2.getTextSize(info_line_1, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0][0]
         self.draw_text_with_outline(
             frame,
             info_line_1,
-            ((w - i1_w) // 2, 122),
-            scale=0.44,
+            (cx - i1_w // 2, 122),
+            scale=0.42,
             color=bg_col,
             thickness=1,
         )
 
-        info_line_2 = f"Hand Lock: {lock_str}  |  Gestur: [{current_pose}]  |  Survival: {survival_high_score}  |  Level: {unlocked_level}/10"
-        i2_w = cv2.getTextSize(info_line_2, cv2.FONT_HERSHEY_SIMPLEX, 0.44, 1)[0][0]
+        info_line_2 = f"Hand Lock: {lock_str}  |  Pose: [{current_pose}]  |  Survival: {survival_high_score}  |  Level: {unlocked_level}/10"
+        i2_w = cv2.getTextSize(info_line_2, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0][0]
         self.draw_text_with_outline(
             frame,
             info_line_2,
-            ((w - i2_w) // 2, 146),
-            scale=0.44,
+            (cx - i2_w // 2, 146),
+            scale=0.42,
             color=lock_col,
             thickness=1,
         )
@@ -232,13 +287,13 @@ class UIRenderer:
             self.draw_button(frame, btn, current_time)
 
         # Petunjuk interaksi bawah
-        hint = "[B] Rekam BG  |  [N] Reset/Bypass BG  |  [OPEN PALM] Kunci  |  [FIST] Pukul/Klik  |  [V] PiP PCV  |  [M] Mode"
-        h_w = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)[0][0]
+        hint = "[H] Sisi Safe Zone | [B] Rekam BG | [N] Reset BG | [OPEN] Gerak | [FIST] Pukul | [V] PiP PCV"
+        h_w = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.40, 1)[0][0]
         self.draw_text_with_outline(
             frame,
             hint,
-            ((w - h_w) // 2, frame.shape[0] - 22),
-            scale=0.42,
+            (cx - h_w // 2, frame.shape[0] - 22),
+            scale=0.40,
             color=(160, 240, 160),
             thickness=1,
         )
@@ -318,17 +373,23 @@ class UIRenderer:
         buttons: List[InteractiveButton],
         unlocked_level: int,
         high_scores: dict,
-        current_time: float,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
+        current_time: float = 0.0,
     ) -> None:
-        """Merender layar pemilihan level 1 - 10 pada layar penuh."""
-        w = frame.shape[1]
+        """Merender layar pemilihan level 1 - 10 di dalam Playing Section."""
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            cx = px1 + (px2 - px1) // 2
+        else:
+            w = frame.shape[1]
+            cx = w // 2
 
         title = "PILIH LEVEL (1 - 10)"
         t_w = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.95, 2)[0][0]
         self.draw_text_with_outline(
             frame,
             title,
-            ((w - t_w) // 2, 85),
+            (cx - t_w // 2, 85),
             scale=0.95,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
@@ -339,7 +400,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             sub,
-            ((w - sub_w) // 2, 118),
+            (cx - sub_w // 2, 118),
             scale=0.46,
             color=(180, 220, 255),
             thickness=1,
@@ -353,7 +414,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             hint,
-            ((w - h_w) // 2, frame.shape[0] - 25),
+            (cx - h_w // 2, frame.shape[0] - 25),
             scale=0.44,
             color=(160, 240, 160),
             thickness=1,
@@ -364,17 +425,23 @@ class UIRenderer:
         frame: np.ndarray,
         buttons: List[InteractiveButton],
         selected_index: int,
-        current_time: float,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
+        current_time: float = 0.0,
     ) -> None:
-        """Merender layar konfigurasi ukuran grid pada layar penuh."""
-        w = frame.shape[1]
+        """Merender layar konfigurasi ukuran grid di dalam Playing Section."""
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            cx = px1 + (px2 - px1) // 2
+        else:
+            w = frame.shape[1]
+            cx = w // 2
 
         title = "PENGATURAN UKURAN GRID LUBANG"
         t_w = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.92, 2)[0][0]
         self.draw_text_with_outline(
             frame,
             title,
-            ((w - t_w) // 2, 85),
+            (cx - t_w // 2, 85),
             scale=0.92,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
@@ -385,7 +452,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             sub,
-            ((w - sub_w) // 2, 118),
+            (cx - sub_w // 2, 118),
             scale=0.46,
             color=(180, 220, 255),
             thickness=1,
@@ -412,7 +479,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             hint,
-            ((w - h_w) // 2, frame.shape[0] - 25),
+            (cx - h_w // 2, frame.shape[0] - 25),
             scale=0.44,
             color=(160, 240, 160),
             thickness=1,
@@ -427,16 +494,26 @@ class UIRenderer:
         hand_detected: bool,
         current_pose: str,
         is_locked: bool,
-        current_time: float,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
+        current_time: float = 0.0,
     ) -> None:
-        """Merender HUD atas khusus Mode Survival pada layar penuh."""
-        w = frame.shape[1]
+        """Merender HUD atas khusus Mode Survival di dalam Playing Section."""
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            cx = px1 + (px2 - px1) // 2
+            right_x = px2 - 240
+            left_x = px1 + 25
+        else:
+            w = frame.shape[1]
+            cx = w // 2
+            right_x = w - 240
+            left_x = 35
 
         # Skor di Kiri
         self.draw_text_with_outline(
             frame,
             f"SKOR: {score_manager.score}",
-            (35, 45),
+            (left_x, 45),
             scale=0.82,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
@@ -448,7 +525,7 @@ class UIRenderer:
             self.draw_text_with_outline(
                 frame,
                 f"KOMBO x{multiplier}! ({combo}x Hit)",
-                (35, 75),
+                (left_x, 75),
                 scale=0.58,
                 color=(0, 255, 120),
                 thickness=2,
@@ -463,25 +540,25 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             timer_text,
-            ((w - t_size[0]) // 2, 45),
+            (cx - t_size[0] // 2, 45),
             scale=0.68,
             color=(255, 220, 0),
             thickness=2,
         )
 
         # Simbol Nyawa
-        heart_x = (w - t_size[0]) // 2
+        heart_x = cx - t_size[0] // 2
         for i in range(survival_tracker.max_lives):
             color = COLOR_HEART_RED if i < survival_tracker.lives else (80, 80, 80)
             cv2.circle(frame, (heart_x + i * 26 + 10, 72), 8, color, -1, cv2.LINE_AA)
 
         # Status Gestur & Kunci di Kanan
         lock_col = (0, 255, 120) if is_locked else (0, 200, 255)
-        lock_lbl = "LOCKED" if is_locked else "CARING OPEN"
+        lock_lbl = "LOCKED" if is_locked else "CARI TELAPAK"
         self.draw_text_with_outline(
             frame,
             f"[{lock_lbl}] [{current_pose}]",
-            (w - 240, 45),
+            (right_x, 45),
             scale=0.55,
             color=lock_col,
             thickness=2,
@@ -489,7 +566,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             f"REKOR: {high_score}",
-            (w - 240, 75),
+            (right_x, 75),
             scale=0.50,
             color=(180, 180, 180),
             thickness=1,
@@ -505,14 +582,24 @@ class UIRenderer:
         hand_detected: bool,
         current_pose: str,
         is_locked: bool,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
     ) -> None:
-        """Merender HUD atas khusus Mode Level Progression pada layar penuh."""
-        w = frame.shape[1]
+        """Merender HUD atas khusus Mode Level Progression di dalam Playing Section."""
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            cx = px1 + (px2 - px1) // 2
+            right_x = px2 - 240
+            left_x = px1 + 25
+        else:
+            w = frame.shape[1]
+            cx = w // 2
+            right_x = w - 240
+            left_x = 35
 
         self.draw_text_with_outline(
             frame,
             f"LEVEL {level_cfg.level_num}: {level_cfg.title}",
-            (35, 45),
+            (left_x, 45),
             scale=0.80,
             color=COLOR_PRIMARY_CYAN,
             thickness=2,
@@ -523,14 +610,14 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             f"Target Mole: {hits} / {target}",
-            (35, 75),
+            (left_x, 75),
             scale=0.55,
             color=(220, 220, 220),
             thickness=1,
         )
 
         # Progress bar
-        bar_x = 220
+        bar_x = left_x + 185
         bar_w = 120
         ratio = max(0.0, min(1.0, hits / target))
         cv2.rectangle(frame, (bar_x, 63), (bar_x + bar_w, 75), (50, 50, 50), -1)
@@ -544,7 +631,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             time_text,
-            ((w - t_size[0]) // 2, 55),
+            (cx - t_size[0] // 2, 55),
             scale=0.88,
             color=time_color,
             thickness=2,
@@ -555,7 +642,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             f"[{lock_lbl}] [{current_pose}]",
-            (w - 240, 45),
+            (right_x, 45),
             scale=0.55,
             color=lock_col,
             thickness=2,
@@ -563,7 +650,7 @@ class UIRenderer:
         self.draw_text_with_outline(
             frame,
             f"REKOR: {best_score}",
-            (w - 240, 75),
+            (right_x, 75),
             scale=0.50,
             color=(180, 180, 180),
             thickness=1,

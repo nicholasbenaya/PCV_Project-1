@@ -8,16 +8,17 @@ Berkas Utama: [`main.py`](main.py) | [`game_engine.py`](game_engine.py) | [`hand
 
 ## 1. Pendahuluan
 
-**Whack-A-Mole Virtual** adalah game arcade interaktif berbasis *Computer Vision* murni (**OpenCV `cv2` & NumPy**) tanpa pustaka *deep learning* (tanpa MediaPipe, YOLO, TensorFlow, PyTorch) dan **tanpa XML Classifier (tanpa Haar Cascade)**. Tangan pemain bebas bergerak di seluruh layar tanpa pembatasan Safe Area / partisi statis.
+**Whack-A-Mole Virtual** adalah game arcade interaktif berbasis *Computer Vision* murni (**OpenCV `cv2` & NumPy**) tanpa pustaka *deep learning* (tanpa MediaPipe, YOLO, TensorFlow, PyTorch) dan **tanpa XML Classifier (tanpa Haar Cascade)**.
 
-Pembaruan utama sistem ini mencakup **4 Pilar Pengolahan Citra Digital (PCD) Klasik**:
-1. **Background Subtraction Berbasis Referensi (Tombol `[B]`)**: Mengeliminasi dinding, meja, dan tubuh yang diam melalui selisih absolut (`cv2.absdiff()`).
-2. **Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)**: Menghitung lubang internal mata, alis, dan mulut untuk mendiskualifikasi wajah tanpa memerlukan learning model.
-3. **Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Tracking**: Sistem hanya mengunci kursor saat pemain menunjukkan telapak tangan terbuka (*HIGH_FIVE*), kemudian melacak kontur terdekat secara spasial termasuk saat mengepal (*FIST*).
-4. **Sistem Klasifikasi 2 Hand Pose & Cursor Freeze**:
+Pembaruan utama sistem pada branch `safe-area` mencakup integrasi **Dual-Section Safe Area** dan **4 Pilar Pengolahan Citra Digital (PCD) Klasik**:
+1. **Partisi Dual-Section Safe Area (Tombol `[H]` / `[TAB]`)**: Menolkan seluruh masker di luar Playing Section sehingga 100% wajah, kepala, rambut, dan tubuh pemain terblokir dari pelacakan.
+2. **Background Subtraction Berbasis Referensi (Tombol `[B]`)**: Mengeliminasi dinding, meja, dan tubuh yang diam melalui selisih absolut (`cv2.absdiff()`).
+3. **Eliminasi Wajah via Topologi Hierarki Kontur (`cv2.RETR_CCOMP`)**: Menghitung lubang internal mata, alis, dan mulut untuk mendiskualifikasi wajah tanpa memerlukan learning model.
+4. **Mekanisme "Open-Palm Lock-On" & Nearest-Neighbor Tracking**: Sistem hanya mengunci kursor saat pemain menunjukkan telapak tangan terbuka (*HIGH_FIVE*), kemudian melacak kontur terdekat secara spasial termasuk saat mengepal (*FIST*) dengan Area Confidence Scoring.
+5. **Sistem Klasifikasi 2 Hand Pose & Cursor Freeze**:
    - `HIGH_FIVE` (Open Palm): Berfungsi mengarahkan kursor bidikan (tidak memukul).
    - `FIST` (Kepalan Tangan): Berfungsi memukul mole (**WHACK!**) atau mengeklik tombol menu, dilengkapi *cursor position damping* saat jari mengepal.
-5. **Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)**: Menampilkan visualisasi real-time *Convex Hull*, titik *Convexity Defects*, nilai *Solidity*, *Aspect Ratio*, dan status pose.
+6. **Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)**: Menampilkan visualisasi real-time *Convex Hull*, titik *Convexity Defects*, nilai *Solidity*, *Aspect Ratio*, dan status pose.
 
 ---
 

@@ -418,6 +418,19 @@ class HandTracker:
         else:
             raw_mask = color_mask
 
+        # Isolasi Playing Section jika Safe Area aktif (memblokir 100% wajah/tubuh/rambut di luar arena)
+        if play_rect is not None:
+            px1, py1, px2, py2 = play_rect
+            h_f, w_f = raw_mask.shape[:2]
+            px1 = max(0, min(px1, w_f))
+            px2 = max(0, min(px2, w_f))
+            py1 = max(0, min(py1, h_f))
+            py2 = max(0, min(py2, h_f))
+            if (px2 - px1) < w_f or (py2 - py1) < h_f:
+                isolated_mask = np.zeros_like(raw_mask)
+                isolated_mask[py1:py2, px1:px2] = raw_mask[py1:py2, px1:px2]
+                raw_mask = isolated_mask
+
         # Mask awal sebelum closing besar (untuk analisis topologi lubang internal RETR_CCOMP)
         pre_mask = cv2.morphologyEx(raw_mask, cv2.MORPH_OPEN, self._kernel_open, iterations=1)
 
