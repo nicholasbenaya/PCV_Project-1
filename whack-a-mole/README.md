@@ -99,10 +99,10 @@ Sistem **tidak pernah** langsung memilih kontur terbesar di layar (yang sering k
    - Jika tangan keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik), kunci dilepas otomatis dan sistem kembali ke fase pencarian.
 
 ### 3.4. Pilar 4: Ekstraksi Fitur Bentuk, Klasifikasi Pose, & Cursor Freeze
-- **Klasifikasi 2 Pose & Eliminasi False Positive Titik Merah**:
-  - `HIGH_FIVE` (Move / Hover): Terdeteksi jika terdapat celah sela jari terbuka nyata ($\text{Defects} \ge 2 \lor (\text{Defects} \ge 1 \land \text{Solidity} < 0.78)$).
-  - `FIST` (Whack / Click): Jari mengepal rapat menjadi satu kesatuan cembung padat ($\text{Solidity} \ge 0.78$ dan $\text{Defects} \le 1$).
-  - **Eliminasi Titik Merah Jempol pada Kepalan**: Ambang batas kedalaman defek dinaikkan menjadi `DEFECT_MIN_DEPTH_RATIO = 0.15` dan batas minimal absolut `DEFECT_MIN_PIXEL_DEPTH = 14.0 px`, disertai filter area pergelangan tangan (18% terbawah bounding box) serta filter garis potong Safe Area. Dengan demikian, lekukan jempol di sebelah kiri atas kepalan tangan tidak akan pernah memicu titik merah palsu ataupun salah terbaca sebagai `HIGH_FIVE`.
+- **Klasifikasi 2 Pose & Eliminasi False Positive Titik Merah (Kiri Atas, Kanan Atas, Kanan Tengah)**:
+  - `HIGH_FIVE` (Move / Hover): Terdeteksi jika tangan terbuka ($\text{Solidity} < 0.80$) dan memiliki minimal 1 celah sela jari nyata ($\text{Defects} \ge 1$) dengan kedalaman $d \ge \max(18\text{ px}, 0.20 \times \min(w, h))$ serta panjang sisi lengan $L \ge \max(20\text{ px}, 0.20 \times \min(w, h))$.
+  - `FIST` (Whack / Click): Kepalan tangan padat dan rapat ($\text{Solidity} \ge 0.80$). Seluruh defek sela jari otomatis di-nolkan total sehingga **tidak ada lagi titik merah palsu** di kiri atas (jempol), kanan atas (buku kelingking), maupun kanan tengah (lekukan pinggir telapak tangan).
+  - **Filter Geometri Sisi Lengan & Sudut**: Lekukan riak kulit buku jari kepalan berukuran dangkal ($< 18\text{ px}$) dengan lengan pendek ($< 20\text{ px}$) langsung gugur sebelum mencapai threshold sela jari asli ($> 35 - 90\text{ px}$).
 - **Temporal Smoothing**: Buffer voting 5 frame untuk menghilangkan kedipan transisi.
 - **Cursor Position Freeze**: Saat transisi ke *FIST*, posisi kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$, menjamin pukulan mole tetap akurat.
 

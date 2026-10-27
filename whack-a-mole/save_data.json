@@ -1,9 +1,21 @@
 {
-  "unlocked_level": 1,
-  "level_high_scores": {},
-  "level_cleared": {},
+  "unlocked_level": 6,
+  "level_high_scores": {
+    "1": 1700,
+    "2": 1400,
+    "3": 3200,
+    "4": 3100,
+    "5": 3000
+  },
+  "level_cleared": {
+    "1": true,
+    "2": true,
+    "3": true,
+    "4": true,
+    "5": true
+  },
   "survival_high_score": 700,
-  "selected_grid_index": 1,
+  "selected_grid_index": 2,
   "calib_data": {
     "mode": 0,
     "cr_range": [

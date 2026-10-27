@@ -20,6 +20,8 @@ try:
         BG_DIFF_THRESHOLD,
         CENTROID_SMOOTHING_FACTOR,
         DEFECT_MAX_ANGLE_DEG,
+        DEFECT_MIN_ARM_LEN_RATIO,
+        DEFECT_MIN_ARM_PIXEL_LEN,
         DEFECT_MIN_DEPTH_RATIO,
         DEFECT_MIN_PIXEL_DEPTH,
         FACE_MIN_HOLE_AREA,
@@ -61,6 +63,8 @@ except ImportError:
         BG_DIFF_THRESHOLD,
         CENTROID_SMOOTHING_FACTOR,
         DEFECT_MAX_ANGLE_DEG,
+        DEFECT_MIN_ARM_LEN_RATIO,
+        DEFECT_MIN_ARM_PIXEL_LEN,
         DEFECT_MIN_DEPTH_RATIO,
         DEFECT_MIN_PIXEL_DEPTH,
         FACE_MIN_HOLE_AREA,
@@ -341,9 +345,10 @@ class HandTracker:
                 defects = cv2.convexityDefects(contour, hull_indices)
                 if defects is not None:
                     min_dim = min(w, h)
-                    # Filter kedalaman defek: harus melebihi batas piksel absolut dan rasio proporsional
-                    # Ini mencegah lekukan jempol pada kepalan tangan terdeteksi sebagai sela jari (titik merah palsu)
+                    # Filter kedalaman & panjang lengan defek: harus melebihi batas piksel absolut dan rasio proporsional
+                    # Ini mencegah lekukan jempol, buku kelingking, dan pinggir telapak terdeteksi sebagai sela jari
                     depth_thresh = max(DEFECT_MIN_PIXEL_DEPTH, DEFECT_MIN_DEPTH_RATIO * min_dim)
+                    min_arm_len = max(DEFECT_MIN_ARM_PIXEL_LEN, DEFECT_MIN_ARM_LEN_RATIO * min_dim)
                     defects = defects.reshape(-1, 4)
 
                     for i in range(defects.shape[0]):
@@ -369,8 +374,15 @@ class HandTracker:
 
                         a = start.astype(float) - far.astype(float)
                         b = end.astype(float) - far.astype(float)
+                        len_a = float(np.linalg.norm(a))
+                        len_b = float(np.linalg.norm(b))
+
+                        # Filter 3: Kedua sisi celah jari harus memiliki panjang nyata (bukan riak kulit buku jari kepalan)
+                        if min(len_a, len_b) < min_arm_len:
+                            continue
+
                         dot_val = float(np.dot(a, b))
-                        norm_prod = float(np.linalg.norm(a) * np.linalg.norm(b))
+                        norm_prod = len_a * len_b
 
                         if norm_prod > 1e-4:
                             cos_val = np.clip(dot_val / norm_prod, -1.0, 1.0)
@@ -385,12 +397,18 @@ class HandTracker:
                 valid_defects_count = 0
 
         # Klasifikasi 2 Hand Pose Sederhana & Tepat:
-        # HIGH_FIVE (Move): Memiliki >= 2 celah sela jari, ATAU 1 celah sela jari dengan soliditas rendah (< 0.78, tangan terbuka)
-        # FIST (Whack): Kepalan tangan padat dan rapat (soliditas >= 0.78, tidak memiliki sela jari dalam)
-        if valid_defects_count >= 2 or (valid_defects_count >= 1 and solidity < HIGH_FIVE_MAX_SOLIDITY):
-            raw_pose = POSE_HIGH_FIVE
-        else:
+        # 1. Jika kepalan tangan padat dan rapat (solidity >= 0.80), 100% adalah FIST (Whack)
+        #    Defek sela jari dinolkan total agar tidak ada titik merah palsu di buku jari/pinggir kepalan
+        if solidity >= FIST_MIN_SOLIDITY:
+            valid_defects_count = 0
+            defect_pts = []
             raw_pose = POSE_FIST
+        else:
+            # 2. Jika tangan terbuka (solidity < 0.80) dan terdapat minimal 1 celah sela jari dalam valid -> HIGH_FIVE
+            if valid_defects_count >= HIGH_FIVE_MIN_DEFECTS:
+                raw_pose = POSE_HIGH_FIVE
+            else:
+                raw_pose = POSE_FIST
 
         return raw_pose, valid_defects_count, solidity, aspect_ratio, defect_pts, hull_points
 

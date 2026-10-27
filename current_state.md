@@ -83,17 +83,21 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
   - Jika tangan tertutup sejenak (occlusion 1-2 frame), sistem menahan kursor pada koordinat terakhir tangan dan tidak melompat.
   - Kunci hanya dilepas jika tangan benar-benar ditarik keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik).
 
-### D. Pilar 4: Ekstraksi Fitur 2 Pose Sederhana (HIGH_FIVE vs FIST) & Eliminasi Titik Merah Palsu
-- **Akar Masalah Titik Merah Kiri Atas pada Kepalan**:
-  - Pada tangan kanan yang mengepal ke arah webcam, lekukan antara jempol terlipat dan buku jari telunjuk menghasilkan ceruk dengan kedalaman $\approx 8 - 12\text{ px}$.
-  - Dengan parameter lama `DEFECT_MIN_DEPTH_RATIO = 0.08`, ceruk jempol ini lolos seleksi defek ($100\text{ px} \times 0.08 = 8\text{ px}$) dan ditandai lingkaran merah di sebelah kiri atas kepalan tangan.
-  - Akibat `HIGH_FIVE_MIN_DEFECTS = 1`, kepalan tangan penuh tersebut keliru terbaca sebagai `HIGH_FIVE` dan gagal mengeksekusi pukulan (`WHACK!`).
+### D. Pilar 4: Ekstraksi Fitur 2 Pose Sederhana (HIGH_FIVE vs FIST) & Eliminasi Total Titik Merah Palsu
+- **Akar Masalah Titik Merah Kiri Atas, Kanan Atas, dan Kanan Tengah pada Kepalan**:
+  - Pada kepalan tangan penuh, lekukan buku kelingking di kanan atas ($d \approx 15.6\text{ px}$) dan lekukan pinggir telapak tangan/kelingking terlipat di kanan tengah ($d \approx 19.2\text{ px}$) memiliki kedalaman yang sempat melewati ambang batas $14\text{ px}$.
+  - Akibatnya, dua ceruk tersebut terdeteksi sebagai 2 titik defek valid dan memicu kondisi pose `HIGH_FIVE` secara keliru pada kepalan tangan padat.
 - **Solusi Rekayasa Geometri PCD Klasik**:
-  1. *Ambang Kedalaman Proporsional & Minimal Absolut*: Menaikkan `DEFECT_MIN_DEPTH_RATIO = 0.15` dan menetapkan `DEFECT_MIN_PIXEL_DEPTH = 14.0 px`. Celah sela jari asli pada telapak terbuka memiliki kedalaman $25 - 60\text{ px}$ sehingga tetap terdeteksi mulus, sedangkan lekukan jempol kepalan ($< 12\text{ px}$) tereliminasi total (nol titik merah).
-  2. *Filter Pergelangan Tangan & Garis Batas*: Mengabaikan defek di 18% terbawah bounding box (area masuk pergelangan tangan) dan defek yang menempel pada garis batas vertikal Safe Area.
-  3. *Klasifikasi Pose Berbasis Konsistensi Morfologi*:
-     - `HIGH_FIVE` (Move / Hover): Terdeteksi jika $\text{Defects} \ge 2$, ATAU $\text{Defects} \ge 1$ dengan kontur renggang ($\text{Solidity} < 0.78$).
-     - `FIST` (Whack / Click): Kepalan padat cembung ($\text{Solidity} \ge 0.78$ dan $\text{Defects} \le 1$), menjamin kepalan tangan penuh 100% konsisten terklasifikasi sebagai `FIST`.
+  1. *Dual Threshold: Kedalaman Defek & Panjang Lengan Sisi Jari*:
+     - `DEFECT_MIN_DEPTH_RATIO = 0.20` dan batas minimal absolut `DEFECT_MIN_PIXEL_DEPTH = 18.0 px`.
+     - Ditambahkan syarat panjang lengan sisi sela jari: $\min(\text{len}_a, \text{len}_b) \ge \max(20.0\text{ px}, 0.20 \times \min(w, h))$.
+     - Riak kulit buku jari dan pinggir kepalan memiliki sisi lengan yang sangat pendek ($< 20\text{ px}$), sehingga 100% gugur. Sebaliknya, sela jari asli pada telapak terbuka memiliki jari yang panjang ($> 35 - 90\text{ px}$) sehingga tetap terdeteksi mulus.
+  2. *Solidity Gating*:
+     - Jika kontur memiliki soliditas tinggi ($\text{Solidity} \ge 0.80$), kontur secara matematis dijamin merupakan kepalan cembung padat (**FIST**). Seluruh defek dinolkan total (`valid_defects_count = 0`, `defect_pts = []`).
+     - Nol titik merah di seluruh area kepalan tangan (kiri atas, kanan atas, kanan tengah terbebas 100%).
+  3. *Klasifikasi Pose Konsisten*:
+     - `HIGH_FIVE` (Move / Hover): Terdeteksi jika tangan terbuka ($\text{Solidity} < 0.80$) dan memiliki minimal 1 sela jari nyata ($\text{Defects} \ge 1$).
+     - `FIST` (Whack / Click): Kepalan padat cembung ($\text{Solidity} \ge 0.80$) atau tangan tanpa celah sela jari dalam.
 - **Cursor Freeze Damping**: Saat transisi ke FIST, kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$ agar pukulan tidak meleset.
 
 ### E. Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)
