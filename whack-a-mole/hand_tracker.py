@@ -21,6 +21,7 @@ try:
         CENTROID_SMOOTHING_FACTOR,
         DEFECT_MAX_ANGLE_DEG,
         DEFECT_MIN_DEPTH_RATIO,
+        DEFECT_MIN_PIXEL_DEPTH,
         FACE_MIN_HOLE_AREA,
         FACE_MIN_INTERNAL_HOLES,
         FIST_ASPECT_RATIO_MAX,
@@ -61,6 +62,7 @@ except ImportError:
         CENTROID_SMOOTHING_FACTOR,
         DEFECT_MAX_ANGLE_DEG,
         DEFECT_MIN_DEPTH_RATIO,
+        DEFECT_MIN_PIXEL_DEPTH,
         FACE_MIN_HOLE_AREA,
         FACE_MIN_INTERNAL_HOLES,
         FIST_ASPECT_RATIO_MAX,
@@ -310,9 +312,11 @@ class HandTracker:
             return cv2.inRange(hsv, self.object_lower, self.object_upper)
 
     def extract_pose_features(
-        self, contour: np.ndarray
+        self,
+        contour: np.ndarray,
+        play_rect: Optional[Tuple[int, int, int, int]] = None,
     ) -> Tuple[str, int, float, float, List[Tuple[int, int]], Optional[np.ndarray]]:
-        """Menganalisis Convexity Defects, Solidity, dan Aspect Ratio pada kontur."""
+        """Menganalisis Convexity Defects, Solidity, dan Aspect Ratio pada kontur tanpa model pembelajaran."""
         if contour is None or len(contour) < 3:
             return POSE_NONE, 0, 0.0, 0.0, [], None
 
@@ -337,7 +341,9 @@ class HandTracker:
                 defects = cv2.convexityDefects(contour, hull_indices)
                 if defects is not None:
                     min_dim = min(w, h)
-                    depth_thresh = DEFECT_MIN_DEPTH_RATIO * min_dim
+                    # Filter kedalaman defek: harus melebihi batas piksel absolut dan rasio proporsional
+                    # Ini mencegah lekukan jempol pada kepalan tangan terdeteksi sebagai sela jari (titik merah palsu)
+                    depth_thresh = max(DEFECT_MIN_PIXEL_DEPTH, DEFECT_MIN_DEPTH_RATIO * min_dim)
                     defects = defects.reshape(-1, 4)
 
                     for i in range(defects.shape[0]):
@@ -350,6 +356,16 @@ class HandTracker:
                         start = contour[s][0]
                         end = contour[e][0]
                         far = contour[f][0]
+
+                        # Filter 1: Abaikan defek di area pergelangan tangan bawah (18% terbawah bounding box)
+                        if far[1] > y + int(h * 0.82):
+                            continue
+
+                        # Filter 2: Abaikan defek buatan yang menempel pada garis batas potong Safe Area
+                        if play_rect is not None:
+                            px1, py1, px2, py2 = play_rect
+                            if abs(far[0] - px1) < 4 or abs(far[0] - px2) < 4:
+                                continue
 
                         a = start.astype(float) - far.astype(float)
                         b = end.astype(float) - far.astype(float)
@@ -368,8 +384,10 @@ class HandTracker:
             except cv2.error:
                 valid_defects_count = 0
 
-        # Klasifikasi 2 Pose: Minimal 1 titik merah (defect >= 1) -> HIGH_FIVE, sisanya -> FIST (Whack)
-        if valid_defects_count >= HIGH_FIVE_MIN_DEFECTS or solidity < HIGH_FIVE_MAX_SOLIDITY:
+        # Klasifikasi 2 Hand Pose Sederhana & Tepat:
+        # HIGH_FIVE (Move): Memiliki >= 2 celah sela jari, ATAU 1 celah sela jari dengan soliditas rendah (< 0.78, tangan terbuka)
+        # FIST (Whack): Kepalan tangan padat dan rapat (soliditas >= 0.78, tidak memiliki sela jari dalam)
+        if valid_defects_count >= 2 or (valid_defects_count >= 1 and solidity < HIGH_FIVE_MAX_SOLIDITY):
             raw_pose = POSE_HIGH_FIVE
         else:
             raw_pose = POSE_FIST
@@ -473,7 +491,7 @@ class HandTracker:
 
                 # Ekstraksi fitur bentuk
                 raw_pose, defect_count, solidity, aspect_ratio, defect_pts, hull_points = (
-                    self.extract_pose_features(cnt)
+                    self.extract_pose_features(cnt, play_rect)
                 )
 
                 # Eliminasi Wajah: jika memiliki >= 3 lubang (mata, alis, mulut) dan defek sela jari < 2 -> REJECT
@@ -509,8 +527,8 @@ class HandTracker:
             for cand in candidate_data:
                 cnt, (cx, cy), area, holes, defects, solidity, ar, defect_pts, hull, raw_pose = cand
 
-                # Kunci Open-Palm Lock-On: Ada minimal 1 titik defek sela jari atau bentuk telapak terbuka
-                if defects >= HIGH_FIVE_MIN_DEFECTS or solidity < HIGH_FIVE_MAX_SOLIDITY:
+                # Kunci Open-Palm Lock-On: HANYA mengunci saat mendeteksi pose telapak tangan terbuka (HIGH_FIVE)
+                if raw_pose == POSE_HIGH_FIVE:
                     self.is_hand_locked = True
                     self.last_hand_centroid = (cx, cy)
                     self.last_hand_area = area

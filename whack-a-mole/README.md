@@ -99,9 +99,10 @@ Sistem **tidak pernah** langsung memilih kontur terbesar di layar (yang sering k
    - Jika tangan keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik), kunci dilepas otomatis dan sistem kembali ke fase pencarian.
 
 ### 3.4. Pilar 4: Ekstraksi Fitur Bentuk, Klasifikasi Pose, & Cursor Freeze
-- **Klasifikasi 2 Pose**:
-  - `HIGH_FIVE` (Move / Hover): Terdeteksi jika terdapat **minimal 1 titik merah sela jari terbuka** ($\text{Defects} \ge 1 \lor \text{Solidity} < 0.80$).
-  - `FIST` (Whack / Click): Sisanya, yaitu saat jari mengepal rapat tanpa celah sela jari ($\text{Defects} == 0 \land \text{Solidity} \ge 0.80$).
+- **Klasifikasi 2 Pose & Eliminasi False Positive Titik Merah**:
+  - `HIGH_FIVE` (Move / Hover): Terdeteksi jika terdapat celah sela jari terbuka nyata ($\text{Defects} \ge 2 \lor (\text{Defects} \ge 1 \land \text{Solidity} < 0.78)$).
+  - `FIST` (Whack / Click): Jari mengepal rapat menjadi satu kesatuan cembung padat ($\text{Solidity} \ge 0.78$ dan $\text{Defects} \le 1$).
+  - **Eliminasi Titik Merah Jempol pada Kepalan**: Ambang batas kedalaman defek dinaikkan menjadi `DEFECT_MIN_DEPTH_RATIO = 0.15` dan batas minimal absolut `DEFECT_MIN_PIXEL_DEPTH = 14.0 px`, disertai filter area pergelangan tangan (18% terbawah bounding box) serta filter garis potong Safe Area. Dengan demikian, lekukan jempol di sebelah kiri atas kepalan tangan tidak akan pernah memicu titik merah palsu ataupun salah terbaca sebagai `HIGH_FIVE`.
 - **Temporal Smoothing**: Buffer voting 5 frame untuk menghilangkan kedipan transisi.
 - **Cursor Position Freeze**: Saat transisi ke *FIST*, posisi kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$, menjamin pukulan mole tetap akurat.
 
@@ -145,6 +146,5 @@ python whack-a-mole/main.py
 | **`1` - `6`** | Pintasan angka menu utama |
 | **`1` - `0`** | Memilih level 1 s.d. 10 pada layar Level Select |
 | **`1` - `4`** | Memilih ukuran grid pada layar Grid Select |
-| **`R`** | Mengulang permainan saat Game Over / Level Cleared |
-| **`SPASI`** | Lanjut ke level berikutnya saat Level Cleared |
-| **`ESC`** | Kembali ke Menu Utama / Keluar |
+| **`R` / `SPASI` / `ENTER`** | Mengulang mode/level yang sama saat Game Over; `SPASI` lanjut level saat Cleared |
+| **`M` / `ESC`** | Kembali ke Menu Utama / Keluar |

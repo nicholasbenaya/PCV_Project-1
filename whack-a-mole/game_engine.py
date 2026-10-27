@@ -442,6 +442,7 @@ class GameEngine:
                         self.final_survival_elapsed = self.survival_tracker.get_elapsed(current_time)
                         self.save_manager.record_survival_score(self.score_manager.score)
                         self.game_over_time = current_time
+                        self.last_played_mode = "SURVIVAL"
                         self.state = GameState.GAMEOVER
                         return None
 
@@ -510,6 +511,8 @@ class GameEngine:
                 self.audio.stop_bgm()
                 self.audio.play_sfx("game_over")
                 self.game_over_time = current_time
+                self.last_played_mode = "LEVEL"
+                self.survival_tracker = None
                 self.state = GameState.GAMEOVER
                 return None
 
@@ -703,13 +706,18 @@ class GameEngine:
                     f"Skor Akhir: {self.score_manager.score}",
                 ]
 
+            action_prompt = (
+                f"Tekan [SPASI] / [ENTER] / [R] untuk Mengulang Level {self.current_level}"
+                if self.last_played_mode == "LEVEL"
+                else "Tekan [SPASI] / [ENTER] / [R] untuk Mulai Ulang Survival"
+            )
             self.renderer.draw_modal_dialog(
                 frame,
                 "GAME OVER",
                 (0, 0, 240),
                 lines,
-                "Tekan [R] untuk Mulai Ulang (Reset Waktu)",
-                secondary_prompt="[ESC] Kembali ke Menu Utama",
+                action_prompt,
+                secondary_prompt="[M] / [ESC] Kembali ke Menu Utama",
             )
 
         # 3. Gambar kursor tangan cerdas

@@ -245,9 +245,9 @@ def run_game() -> None:
                 elif key in (ord("m"), ord("M")):
                     game_engine.state = GameState.MENU
 
-            # Kontrol saat Game Over (Mulai ulang mode yang sama dengan waktu ter-reset)
+            # Kontrol saat Game Over (Mulai ulang mode yang sama dengan level/survival dan waktu ter-reset)
             elif game_engine.state == GameState.GAMEOVER:
-                if key in (ord("r"), ord("R")):
+                if key in (ord("r"), ord("R"), ord(" "), 13, 10):
                     game_engine.restart_current_game(current_time)
                 elif key in (ord("m"), ord("M")):
                     game_engine.state = GameState.MENU

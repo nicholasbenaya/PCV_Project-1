@@ -83,9 +83,17 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
   - Jika tangan tertutup sejenak (occlusion 1-2 frame), sistem menahan kursor pada koordinat terakhir tangan dan tidak melompat.
   - Kunci hanya dilepas jika tangan benar-benar ditarik keluar dari layar selama $> 24\text{ frame}$ (~0.8 detik).
 
-### D. Pilar 4: Ekstraksi Fitur 2 Pose Sederhana (HIGH_FIVE vs FIST)
-- **`HIGH_FIVE` (Move / Open Palm)**: Terdeteksi jika ada **minimal 1 titik merah sela jari** ($\text{Defects} \ge 1 \lor \text{Solidity} < 0.80$). Berfungsi menggerakkan kursor.
-- **`FIST` (Whack / Click)**: Sisanya, yaitu saat tidak ada titik merah sela jari ($\text{Defects} == 0 \land \text{Solidity} \ge 0.80$, kepalan tangan tertutup rapat). Berfungsi memukul mole atau memilih menu.
+### D. Pilar 4: Ekstraksi Fitur 2 Pose Sederhana (HIGH_FIVE vs FIST) & Eliminasi Titik Merah Palsu
+- **Akar Masalah Titik Merah Kiri Atas pada Kepalan**:
+  - Pada tangan kanan yang mengepal ke arah webcam, lekukan antara jempol terlipat dan buku jari telunjuk menghasilkan ceruk dengan kedalaman $\approx 8 - 12\text{ px}$.
+  - Dengan parameter lama `DEFECT_MIN_DEPTH_RATIO = 0.08`, ceruk jempol ini lolos seleksi defek ($100\text{ px} \times 0.08 = 8\text{ px}$) dan ditandai lingkaran merah di sebelah kiri atas kepalan tangan.
+  - Akibat `HIGH_FIVE_MIN_DEFECTS = 1`, kepalan tangan penuh tersebut keliru terbaca sebagai `HIGH_FIVE` dan gagal mengeksekusi pukulan (`WHACK!`).
+- **Solusi Rekayasa Geometri PCD Klasik**:
+  1. *Ambang Kedalaman Proporsional & Minimal Absolut*: Menaikkan `DEFECT_MIN_DEPTH_RATIO = 0.15` dan menetapkan `DEFECT_MIN_PIXEL_DEPTH = 14.0 px`. Celah sela jari asli pada telapak terbuka memiliki kedalaman $25 - 60\text{ px}$ sehingga tetap terdeteksi mulus, sedangkan lekukan jempol kepalan ($< 12\text{ px}$) tereliminasi total (nol titik merah).
+  2. *Filter Pergelangan Tangan & Garis Batas*: Mengabaikan defek di 18% terbawah bounding box (area masuk pergelangan tangan) dan defek yang menempel pada garis batas vertikal Safe Area.
+  3. *Klasifikasi Pose Berbasis Konsistensi Morfologi*:
+     - `HIGH_FIVE` (Move / Hover): Terdeteksi jika $\text{Defects} \ge 2$, ATAU $\text{Defects} \ge 1$ dengan kontur renggang ($\text{Solidity} < 0.78$).
+     - `FIST` (Whack / Click): Kepalan padat cembung ($\text{Solidity} \ge 0.78$ dan $\text{Defects} \le 1$), menjamin kepalan tangan penuh 100% konsisten terklasifikasi sebagai `FIST`.
 - **Cursor Freeze Damping**: Saat transisi ke FIST, kursor dibekukan di koordinat *HIGH_FIVE* terakhir selama $0.35\text{ detik}$ agar pukulan tidak meleset.
 
 ### E. Jendela PiP Diagnostik Fitur Bentuk PCV (Tombol `[V]`)
@@ -96,10 +104,11 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
   4. Titik **Convexity Defects** (lingkaran merah/kuning).
   5. Metrik nilai: *Lock Status, BG Sub Status, Defect Count, Internal Holes, Solidity, Aspect Ratio, dan Status Pose*.
 
-### F. Perbaikan Waktu Game Over & Durasi Proporsional Mole per Whack
-1. **Perbaikan Reset Waktu Saat Game Over**:
+### F. Perbaikan Waktu Game Over, Restart Mode Level, & Durasi Proporsional Mole per Whack
+1. **Perbaikan Reset Waktu & Restart Akurat Level yang Sama Saat Game Over**:
    - Membekukan waktu bertahan (`final_survival_elapsed`) saat Game Over terjadi, sehingga waktu di layar Game Over tidak lagi terus bertambah.
-   - Mengimplementasikan `restart_current_game(current_time)`: Saat pemain menekan tombol `[R]`, sesi di-restart total dengan `start_time` baru (`elapsed = 0.0s`), `time_left` kembali penuh, skor di-reset, dan status mode permainan (Survival vs Level) terisolasi secara mandiri.
+   - **Fix Restart Level Mode**: Memastikan `self.last_played_mode = "LEVEL"` dan `self.survival_tracker = None` secara tegas saat Game Over di Mode Level. Saat pemain menekan tombol `[SPASI]`, `[ENTER]`, atau `[R]`, sistem memanggil `restart_current_game()` yang secara konsisten me-restart **level yang sama persis** (misal: Level 3 tetap Level 3) dengan countdown timer kembali penuh, skor di-reset ke 0, dan tidak tertukar ke mode Survival.
+   - Hotkey `[SPASI]`, `[ENTER]`, dan `[R]` kini sepenuhnya didukung di layar Game Over.
 2. **Durasi Kemunculan Mole Lebih Lama & Adaptif Proporsional**:
    - **Mode Level Progression (Level 1-10)**:
      - Durasi kemunculan mole dinaikkan (+50%) menjadi $2.70\text{s} - 3.20\text{s}$ di Level 1, menurun secara bertahap dan proporsional hingga $1.25\text{s} - 1.65\text{s}$ di Level 10.
@@ -145,9 +154,9 @@ Repositori ini memuat 3 implementasi mandiri berbasis visi komputer murni (**100
 | **`1` - `6`** | Memilih menu utama via keyboard |
 | **`1` - `0`** | Memilih level 1 s.d. 10 pada layar Level Select |
 | **`1` - `4`** | Memilih ukuran grid pada layar Grid Select |
-| **`R`** | Restart sesi permainan saat Game Over / Level Cleared |
+| **`R` / `SPASI` / `ENTER`** | Restart sesi permainan saat Game Over (mengulang mode/level yang sama persis) |
 | **`SPASI`** | Lanjut ke level berikutnya saat Level Cleared |
-| **`ESC`** | Kembali ke Menu Utama dari layar mana pun / Keluar permainan |
+| **`M` / `ESC`** | Kembali ke Menu Utama dari layar mana pun / Keluar permainan |
 
 ---
 

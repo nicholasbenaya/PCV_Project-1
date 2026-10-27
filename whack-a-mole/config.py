@@ -87,14 +87,15 @@ POSE_HIGH_FIVE = "HIGH_FIVE"
 POSE_FIST = "FIST"
 
 # Threshold Klasifikasi 2 Hand Pose Sederhana (HIGH_FIVE move vs FIST whack)
-# Aturan sesuai kebutuhan: minimal deteksi 1 titik merah (defect >= 1) -> HIGH_FIVE, sisanya -> FIST (whack)
-HIGH_FIVE_MIN_DEFECTS = 1  # Minimal 1 titik merah (celah sela jari terbuka)
-HIGH_FIVE_MAX_SOLIDITY = 0.80
+# Aturan sesuai kebutuhan: sela jari terbuka (defek dalam) -> HIGH_FIVE, kepalan tangan rapat -> FIST (whack)
+HIGH_FIVE_MIN_DEFECTS = 1  # Minimal 1 celah sela jari terbuka valid
+HIGH_FIVE_MAX_SOLIDITY = 0.78
 DEFECT_MAX_ANGLE_DEG = 85.0  # Sudut tajam celah sela jari (< 85 derajat)
-DEFECT_MIN_DEPTH_RATIO = 0.08  # Kedalaman minimal celah sela jari
+DEFECT_MIN_DEPTH_RATIO = 0.15  # Ambang kedalaman sela jari (menghilangkan false positive lipatan jempol pada kepalan)
+DEFECT_MIN_PIXEL_DEPTH = 14.0  # Kedalaman piksel minimal absolut agar lekukan mikro tidak terbaca titik merah
 
-FIST_MAX_DEFECTS = 0  # 0 titik merah (jari mengepal rapat tanpa celah)
-FIST_MIN_SOLIDITY = 0.80
+FIST_MAX_DEFECTS = 0  # 0 defek sela jari pada kepalan tangan rapat
+FIST_MIN_SOLIDITY = 0.78  # Kepalan tangan memiliki soliditas tinggi (kontur cembung pejal)
 FIST_ASPECT_RATIO_MIN = 0.55
 FIST_ASPECT_RATIO_MAX = 1.45
 FIST_FREEZE_DURATION = 0.35  # Durasi pembekuan posisi kursor saat transisi ke FIST (detik)
